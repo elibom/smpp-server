@@ -1,6 +1,6 @@
 h1. SMPP Server
 
-A project based on the "smppapi":http://smppapi.sourceforge.net/ library used to accept client connections and allow you to process SMPP packets.
+A project based on the "smppapi":http://smppapi.sourceforge.net/ library that accepts client connections and allows you to process SMPP packets.
 
 h2. Starting and stopping
 
@@ -21,6 +21,7 @@ To process SMPP packets, you will need to provide an implementation of the @net.
 <pre><code>
 public class MyPacketProcessor implements PacketProcessor {
 			
+	@Override
 	public ResponseStatus processPacket(SMPPPacket packet) {
 				
 		if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER
@@ -41,7 +42,7 @@ public class MyPacketProcessor implements PacketProcessor {
 }
 </code></pre> 
 
-You will need to pass your PacketProcessor implementation to the SmppServer using the constructor or the setter method:
+You will need to pass your @PacketProcessor@ implementation to the @SmppServer@ using the constructor or the setter method:
 
 <pre><code>
 SmppServer server = new SmppServer(4444, new MyPacketProcessor());
@@ -50,5 +51,7 @@ SmppServer server = new SmppServer(4444, new MyPacketProcessor());
 		
 server.setPacketProcessor(new MyPacketProcessor());
 </code></pre>
+
+If you don't provide a @PacketProcessor@ implementation, the default always returns @ResponseStatus.OK@.
 
 That's it!
