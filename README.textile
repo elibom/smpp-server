@@ -1,54 +1,54 @@
-The SMPP Server accepts client connections and allows you to process SMPP packets. The project is based on the "smppapi":http://smppapi.sourceforge.net/ library.
+h1. SMPP Server
 
-To start the accepting connections you need to instantiate the @org.gescobar.SmppServer@ class and call the @start()@ method:
+A project based on the "smppapi":http://smppapi.sourceforge.net/ library used to accept client connections and allow you to process SMPP packets.
 
-<pre>
-	<code>
-		SmppServer server = new SmppServer(4444); // 4444 is the port to listen for incoming connections
-		server.start();
+h2. Starting and stopping
+
+To start the server you need to instantiate the @net.gescobar.SmppServer@ class and call the @start()@ method:
+
+<pre><code>
+SmppServer server = new SmppServer(4444); // 4444 is the port to listen for incoming connections
+server.start();
 		
-		// somewhere else
-		server.stop();
-	</code>
-</pre>
+// somewhere else
+server.stop();
+</code></pre>
 
-To process SMPP packets, you will need to provide an implementation of the @org.gescobar.PacketProcessor@:
+h2. Processing SMPP packets
 
-<pre>
-	<code>
-		public class MyPacketProcessor implements PacketProcessor {
+To process SMPP packets, you will need to provide an implementation of the @net.gescobar.PacketProcessor@:
+
+<pre><code>
+public class MyPacketProcessor implements PacketProcessor {
 			
-			public ResponseStatus processPacket(SMPPPacket packet) {
+	public ResponseStatus processPacket(SMPPPacket packet) {
 				
-				if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER
-	   	 				|| packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER
-	   	 				|| packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
+		if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER
+	   	 		|| packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER
+	   	 		|| packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
 	   	 		
-	   	 			// check the credentials and return the corresponding SMPP command status
-	   	 			return ResponseStatus.OK;
+	   	 	// check the credentials and return the corresponding SMPP command status
+	   	 	return ResponseStatus.OK;
 	   	 					
-	   	 		} else if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
+	   	 } else if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
 	   	 		
-	   	 			// a message has arrived, what do you want to do with it?
+	   	 	// a message has arrived, what do you want to do with it?
 	   	 			
-	   	 			return ResponseStatus.INVALID_DEST_ADDRESS; // just an example
+	   	 	return ResponseStatus.INVALID_DEST_ADDRESS; // just an example
 	   	 		
-	   	 		}
-			}
-		}
-	</code>
-</pre> 
+	   	 }
+	}
+}
+</code></pre> 
 
 You will need to pass your PacketProcessor implementation to the SmppServer using the constructor or the setter method:
 
-<pre>
-	<code>
-		SmppServer server = new SmppServer(4444, new MyPacketProcessor());
+<pre><code>
+SmppServer server = new SmppServer(4444, new MyPacketProcessor());
 		
-		// or
+// or
 		
-		server.setPacketProcessor(new MyPacketProcessor());
-	</code>
-</pre>
+server.setPacketProcessor(new MyPacketProcessor());
+</code></pre>
 
 That's it!
