@@ -59,7 +59,6 @@ h2. Sending SMPP requests to the client
 You can also send requests to the client (e.g. deliver_sm or unbind) through a session. For example:
 
 <pre><code>
-
 // first, we need to find the session to which we want to send the request
 SmppSession targetSession = null;
 
@@ -71,7 +70,7 @@ for (SmppSession s : sessions) {
 	}
 }
 
-// create the request and send
+// create the request and send it
 DeliverSM ds = new DeliverSM();
 // ... set other fields
 
