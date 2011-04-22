@@ -1,13 +1,13 @@
 h1. SMPP Server
 
-A project based on the "smppapi":http://smppapi.sourceforge.net/ library that accepts client connections and allows you to process SMPP packets.
+A project based on the "smppapi":http://smppapi.sourceforge.net/ library that accepts client connections and allows you to easily handle SMPP packets.
 
 h2. Starting and stopping
 
-To start the server you need to instantiate the @net.gescobar.SmppServer@ class and call the @start()@ method:
+To start the server you need to instantiate the @net.gescobar.smppserver.SmppServer@ class and call the @start()@ method:
 
 <pre><code>
-SmppServer server = new SmppServer(4444); // 4444 is the port to listen for incoming connections
+SmppServer server = new SmppServer(4444); // 4444 is the port, change it as needed
 server.start();
 		
 // somewhere else
@@ -16,7 +16,7 @@ server.stop();
 
 h2. Processing SMPP packets
 
-To process SMPP packets, you will need to provide an implementation of the @net.gescobar.PacketProcessor@:
+To process SMPP packets, you will need to provide an implementation of the @net.gescobar.smppserver.PacketProcessor@:
 
 <pre><code>
 public class MyPacketProcessor implements PacketProcessor {
@@ -52,6 +52,6 @@ SmppServer server = new SmppServer(4444, new MyPacketProcessor());
 server.setPacketProcessor(new MyPacketProcessor());
 </code></pre>
 
-If you don't provide a @PacketProcessor@ implementation, the default always returns @ResponseStatus.OK@.
+If you don't provide a @PacketProcessor@ implementation, the default one (that always returns @ResponseStatus.OK@) will be used.
 
-That's it!
+That's it! You can start receiving connections now.
