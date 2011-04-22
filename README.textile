@@ -16,7 +16,7 @@ server.stop();
 
 h2. Processing SMPP packets
 
-To process SMPP packets, you will need to provide an implementation of the @net.gescobar.smppserver.PacketProcessor@:
+To process SMPP packets, you will need to provide an implementation of the @net.gescobar.smppserver.PacketProcessor@. For example:
 
 <pre><code>
 public class MyPacketProcessor implements PacketProcessor {
@@ -42,7 +42,7 @@ public class MyPacketProcessor implements PacketProcessor {
 }
 </code></pre> 
 
-Finally, you will need to pass your @PacketProcessor@ implementation to the @SmppServer@ using the constructor or the setter method:
+To use your @PacketProcessor@ implementation, set it in the @SmppServer@ using the constructor or the setter method:
 
 <pre><code>
 SmppServer server = new SmppServer(4444, new MyPacketProcessor());
@@ -58,7 +58,7 @@ h2. Sending SMPP requests to the client
 
 You can also send requests to the client (e.g. deliver_sm or unbind) through a session. For example:
 
-<pre>code>
+<pre><code>
 
 // first, we need to find the session to which we want to send the request
 SmppSession targetSession = null;
@@ -79,4 +79,4 @@ targetSession.sendRequest(ds);
 
 </code></pre>
 
-That's it! As you can see, it's a simple, yet powerful design.
+That's it! As you can see, it's a simple, yet powerful design that will allow you to accept SMPP client connections, process incoming SMPP packets and send requests to the clients.
