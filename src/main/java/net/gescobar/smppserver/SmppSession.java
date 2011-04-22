@@ -8,7 +8,9 @@ import ie.omk.smpp.message.SMPPRequest;
 import ie.omk.smpp.message.SMPPResponse;
 import ie.omk.smpp.net.StreamLink;
 import ie.omk.smpp.util.APIConfig;
+import ie.omk.smpp.util.DefaultSequenceScheme;
 import ie.omk.smpp.util.SMPPIO;
+import ie.omk.smpp.util.SequenceNumberScheme;
 
 import java.io.IOException;
 
@@ -94,10 +96,15 @@ public class SmppSession {
 	private PacketProcessor packetProcessor;
 	
 	/**
-	 * Constructor. Creates an instance with the specified link and the default {@link PacketProcessor} implementation.
-	 * The link must be opened.
+	 * The sequence number scheme used for delivering request to the client
+	 */
+	private SequenceNumberScheme sequenceNumberScheme;
+	
+	/**
+	 * Constructor. Creates an instance with the specified link and default {@link PacketProcessor} and 
+	 * {@link SequenceNumberScheme} implementation. The link must be opened.
 	 * 
-	 * @param link the link used to to receive and send packets from and to the client.
+	 * @param link the link used to receive and send packets from and to the client.
 	 */
 	public SmppSession(StreamLink link) {
 		this(link, new PacketProcessor() {
@@ -111,15 +118,30 @@ public class SmppSession {
 	}
 	
 	/**
-	 * Constructor. Creates an instance with the specified link and {@link PacketProcessor} implementation.
-	 * The link must be opened.
+	 * Constructor. Creates an instance with the specified link and {@link PacketProcessor} implementation. A
+	 * default {@link SequenceNumberScheme} implementation is used. The link must be opened.
 	 * 
-	 * @param link the link used to to receive and send packets from and to the client.
+	 * @param link the link used to receive and send packets from and to the client.
 	 * @param packetProcessor the {@link PacketProcessor} implementation that will process the SMPP messages.
 	 */
 	public SmppSession(StreamLink link, PacketProcessor packetProcessor) {
+		this(link, packetProcessor, new DefaultSequenceScheme());
+	}
+	
+	/**
+	 * Constructor. Creates an instance with the specified link, {@link PacketProcessor} implementation and 
+	 * {@link SequenceNumberScheme} implementation.
+	 * 
+	 * @param link the link used to receive and send packets from and to the client.
+	 * @param packetProcessor the {@link PacketProcessor} implementation that will process the SMPP messages.
+	 * @param sequenceNumberScheme the {@link SequenceNumberScheme} implementation used to send requests to the 
+	 * client.
+	 */
+	public SmppSession(StreamLink link, PacketProcessor packetProcessor, SequenceNumberScheme sequenceNumberScheme) {
+		
 		this.link = link;
 		this.packetProcessor = packetProcessor;
+		this.sequenceNumberScheme = sequenceNumberScheme;
 		
 		try {
 			link.open();
@@ -143,6 +165,9 @@ public class SmppSession {
 		if (!status.equals(Status.BOUND)) {
 			throw new IllegalStateException("The session is not bound.");
 		}
+		
+		// set the sequence number
+		request.setSequenceNum(sequenceNumberScheme.nextNumber());
 		
 		link.write(request, true);
 	}
@@ -197,7 +222,23 @@ public class SmppSession {
 	public PacketProcessor getPacketProcessor() {
 		return packetProcessor;
 	}
-    
+
+	/**
+	 * Sets the sequence number scheme that will be used when sending requests to the client
+	 * 
+	 * @param sequenceNumberScheme the {@link SequenceNumberScheme} implementation to be used.
+	 */
+	public void setSequenceNumberScheme(SequenceNumberScheme sequenceNumberScheme) {
+		this.sequenceNumberScheme = sequenceNumberScheme;
+	}
+
+	/**
+	 * @return the {@link SequenceNumberScheme} implementation that is being used in this session.
+	 */
+	public SequenceNumberScheme getSequenceNumberScheme() {
+		return sequenceNumberScheme;
+	}
+
 	/**
 	 * Thread that receives and process SMPP packets from the client.
 	 * 

@@ -5,6 +5,7 @@ import ie.omk.smpp.Connection;
 import ie.omk.smpp.message.Bind;
 import ie.omk.smpp.message.BindResp;
 import ie.omk.smpp.message.BindTransceiver;
+import ie.omk.smpp.message.DeliverSM;
 import ie.omk.smpp.message.SMPPPacket;
 import ie.omk.smpp.message.SubmitSM;
 import ie.omk.smpp.net.StreamLink;
@@ -126,6 +127,40 @@ public class SmppSessionTest {
 		// check session
 		Assert.assertEquals(smppSession.getStatus(), Status.IDLE);
 		
+	}
+	
+	@Test
+	public void shouldSendRequestToClient() throws Exception {
+		
+		// create the session and client
+		PeerFactory peerFactory = new PeerFactory();
+		SmppSession smppSession = peerFactory.getSmppSession();
+		Connection smppClient = peerFactory.getSmppClient();
+		
+		BindResp bindResp = smppClient.bind(Connection.TRANSCEIVER, "test", null, null);
+		Assert.assertNotNull(bindResp);
+		Assert.assertEquals(bindResp.getCommandStatus(), ResponseStatus.OK.getCommandStatus());
+		
+		// send a DeliverSm
+		DeliverSM ds1 = new DeliverSM();
+		smppSession.sendRequest(ds1);
+		
+		SMPPPacket packet = smppClient.readNextPacket();
+		Assert.assertNotNull(packet);
+		Assert.assertEquals(packet.getCommandId(), SMPPPacket.DELIVER_SM);
+		int sequenceNumber = packet.getSequenceNum();
+		
+		// send another DeliverSm
+		DeliverSM ds2 = new DeliverSM();
+		smppSession.sendRequest(ds2);
+		
+		packet = smppClient.readNextPacket();
+		Assert.assertNotNull(packet);
+		Assert.assertEquals(packet.getCommandId(), SMPPPacket.DELIVER_SM);
+		Assert.assertEquals(packet.getSequenceNum(), sequenceNumber + 1);
+		
+		// unbind
+		smppClient.unbind();
 	}
 	
 	@Test

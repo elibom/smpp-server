@@ -1,6 +1,8 @@
 package net.gescobar.smppserver;
 
 import ie.omk.smpp.message.SMPPPacket;
+import ie.omk.smpp.util.DefaultSequenceScheme;
+import ie.omk.smpp.util.SequenceNumberScheme;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -9,10 +11,10 @@ import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Collection;
 
+import net.gescobar.smppserver.util.SocketLink;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import net.gescobar.smppserver.util.SocketLink;
 
 /**
  * <p>An SMPP Server that accepts client connections and process SMPP packets. Every time a connection is accepted,
@@ -85,12 +87,18 @@ public class SmppServer {
 	private PacketProcessor packetProcessor;
 	
 	/**
+	 * The sequence number scheme used for delivering request to the client
+	 */
+	private SequenceNumberScheme sequenceNumberScheme;
+	
+	/**
 	 * The created sessions.
 	 */
 	private Collection<SmppSession> sessions = new ArrayList<SmppSession>();
 	
 	/**
-	 * Constructor. Creates an instance with the specified port and the default {@link PacketProcessor} implementation.
+	 * Constructor. Creates an instance with the specified port and default {@link PacketProcessor} and 
+	 * {@link SequenceNumberScheme} implementations.
 	 * 
 	 * @param port the server will accept connections in this port.
 	 */
@@ -106,14 +114,29 @@ public class SmppServer {
 	}
 	
 	/**
-	 * Constructor. Creates an instance with the specified port and {@link PacketProcessor} implementation.
+	 * Constructor. Creates an instance with the specified port and {@link PacketProcessor} implementation. A
+	 * default {@link SequenceNumberScheme} implementation is used.
 	 * 
 	 * @param port the server will accept connections in this port. 
 	 * @param packetProcessor the {@link PacketProcessor} implementation that will process the SMPP messages.
 	 */
 	public SmppServer(int port, PacketProcessor packetProcessor) {
+		this(port, packetProcessor, new DefaultSequenceScheme());
+	}
+	
+	/**
+	 * Constructor. Creates an instance with the specified port, {@link PacketProcessor} implementation and 
+	 * {@link SequenceNumberScheme} implementation. 
+	 * 
+	 * @param port the server will accept connections in this port. 
+	 * @param packetProcessor the {@link PacketProcessor} implementation that will process the SMPP messages.
+	 * @param sequenceNumberScheme the {@link SequenceNumberScheme} implementation used to send requests to the 
+	 * client.
+	 */
+	public SmppServer(int port, PacketProcessor packetProcessor, SequenceNumberScheme sequenceNumberScheme) {
 		this.port = port;
 		this.packetProcessor = packetProcessor;
+		this.sequenceNumberScheme = sequenceNumberScheme;
 	}
 
 	/**
@@ -205,7 +228,7 @@ public class SmppServer {
 						
 						// create the session
 						SocketLink link = new SocketLink(socket);
-						SmppSession session = new SmppSession(link, packetProcessor);
+						SmppSession session = new SmppSession(link, packetProcessor, sequenceNumberScheme);
 						
 						// add the session to the collection
 						sessions.add(session);
