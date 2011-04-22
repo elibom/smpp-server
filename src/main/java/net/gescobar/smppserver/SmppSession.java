@@ -4,7 +4,9 @@ import ie.omk.smpp.BadCommandIDException;
 import ie.omk.smpp.message.Bind;
 import ie.omk.smpp.message.SMPPPacket;
 import ie.omk.smpp.message.SMPPProtocolException;
+import ie.omk.smpp.message.SMPPRequest;
 import ie.omk.smpp.message.SMPPResponse;
+import ie.omk.smpp.net.StreamLink;
 import ie.omk.smpp.util.APIConfig;
 import ie.omk.smpp.util.SMPPIO;
 
@@ -12,7 +14,6 @@ import java.io.IOException;
 
 import net.gescobar.smppserver.PacketProcessor.ResponseStatus;
 import net.gescobar.smppserver.util.PacketFactory;
-import net.gescobar.smppserver.util.SocketLink;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +46,7 @@ public class SmppSession {
 		 * The connection is opened and the client is bound.
 		 */
 		BOUND,
-		
+
 		/**
 		 * The connection is closed.
 		 */
@@ -70,7 +71,7 @@ public class SmppSession {
 	/**
 	 * The status of the session.
 	 */
-	private Status status;
+	private Status status = Status.IDLE;
 	
 	/**
 	 * The bind type of the session. Null if not bound.
@@ -85,12 +86,29 @@ public class SmppSession {
 	/**
 	 * The underlying link used to receive and send packets from and to the client.
 	 */
-	private SocketLink link;
+	private StreamLink link;
 	
 	/**
 	 * The class that will process the SMPP messages.
 	 */
 	private PacketProcessor packetProcessor;
+	
+	/**
+	 * Constructor. Creates an instance with the specified link and the default {@link PacketProcessor} implementation.
+	 * The link must be opened.
+	 * 
+	 * @param link the link used to to receive and send packets from and to the client.
+	 */
+	public SmppSession(StreamLink link) {
+		this(link, new PacketProcessor() {
+
+			@Override
+			public ResponseStatus processPacket(SMPPPacket packet) {
+				return ResponseStatus.OK;
+			}
+			
+		});
+	}
 	
 	/**
 	 * Constructor. Creates an instance with the specified link and {@link PacketProcessor} implementation.
@@ -99,7 +117,7 @@ public class SmppSession {
 	 * @param link the link used to to receive and send packets from and to the client.
 	 * @param packetProcessor the {@link PacketProcessor} implementation that will process the SMPP messages.
 	 */
-	public SmppSession(SocketLink link, PacketProcessor packetProcessor) {
+	public SmppSession(StreamLink link, PacketProcessor packetProcessor) {
 		this.link = link;
 		this.packetProcessor = packetProcessor;
 		
@@ -111,6 +129,22 @@ public class SmppSession {
 		
 		// start the thread that will receive the packets
 		new ReceiverThread().start();
+	}
+	
+	/**
+	 * Sends an SMPP request to the client.
+	 * 
+	 * @param request the request packet to send to the client.
+	 * @throws IllegalStateException if the session is not bound.
+	 * @throws IOException if an I/O error occurs while writing the request packet to the network connection.
+	 */
+	public void sendRequest(SMPPRequest request) throws IllegalStateException, IOException {
+		
+		if (!status.equals(Status.BOUND)) {
+			throw new IllegalStateException("The session is not bound.");
+		}
+		
+		link.write(request, true);
 	}
 
 	/**
@@ -156,6 +190,13 @@ public class SmppSession {
 	public void setPacketProcessor(PacketProcessor packetProcessor) {
 		this.packetProcessor = packetProcessor;
 	}
+	
+	/**
+	 * @return the {@link PacketProcessor} implementation that is being used in this session.
+	 */
+	public PacketProcessor getPacketProcessor() {
+		return packetProcessor;
+	}
     
 	/**
 	 * Thread that receives and process SMPP packets from the client.
@@ -178,7 +219,7 @@ public class SmppSession {
 	            log.error("Exception while receiving packets: " + x.getMessage(), x);
 	        }
 	        
-	        // TODO don't we need to close the link here?
+	        // TODO don't we need to close the link here? or somewhere else?
 	        
 	        status = Status.DEAD;
 	        
@@ -255,7 +296,7 @@ public class SmppSession {
 	     * @throws IOException if there is a problem writing the response
 	     */
 	    private void processPacket(SMPPPacket packet) throws IOException {
-	   	 	System.out.println("Received packet with command id: " + packet.getCommandId());
+	   	 	log.debug("received packet: " + packet);
 	   	 
 	   	 	if (packet.isRequest()) {
 	   		 
@@ -263,8 +304,9 @@ public class SmppSession {
 	   	 		ResponseStatus responseStatus = null;
 	   	 		try {
 	   	 			responseStatus = packetProcessor.processPacket(packet);
+	   	 			log.debug("packet processor returned: " + responseStatus);
 	   	 		} catch (Exception e) {
-	   	 			log.error("Exception from the packet processor: " + e.getMessage(), e);
+	   	 			log.error("Exception calling the packet processor: " + e.getMessage(), e);
 	   	 			responseStatus = ResponseStatus.SYSTEM_ERROR;
 	   	 		}
 	   	 		
@@ -279,32 +321,52 @@ public class SmppSession {
 	   	 		// set the command status
 	   	 		response.setCommandStatus(responseStatus.getCommandStatus());
 	   		 
-	   	 		// handle bind or unbind requests
+	   	 		// bind is a special request
 	   	 		if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER
 	   	 				|| packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER
 	   	 				|| packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
+	   	 			
+	   	 			if (status.equals(Status.BOUND)) {
+	   	 				
+	   	 				// can't bind more than once
+	   	 				log.warn("session with system id " + systemId + " is already bound");
+	   	 				response.setCommandStatus(ResponseStatus.ALREADY_BOUND.getCommandStatus());
+	   	 				
+	   	 			} else {
 	   			 
-	   	 			if (responseStatus.equals(ResponseStatus.OK)) {
-	   	 				Bind bind = (Bind) packet;
-		   			 
-	   	 				status = Status.BOUND;
-		   			 
-	   	 				if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER) {
-			   				bindType = BindType.RECEIVER;
-			   			} else if (packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
-			   				bindType = BindType.TRANSMITTER;
-			   			} else if (packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER) {
-			   				bindType = BindType.TRANSCIEVER;
-			   			}
-		   			 
-	   	 				systemId = bind.getSystemId();
+		   	 			if (responseStatus.equals(ResponseStatus.OK)) {
+		   	 				Bind bind = (Bind) packet;
+			   			 
+		   	 				status = Status.BOUND;
+			   			 
+		   	 				if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER) {
+				   				bindType = BindType.RECEIVER;
+				   			} else if (packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
+				   				bindType = BindType.TRANSMITTER;
+				   			} else if (packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER) {
+				   				bindType = BindType.TRANSCIEVER;
+				   			}
+			   			 
+		   	 				systemId = bind.getSystemId();
+		   	 			}
+		   	 			
 	   	 			}
-	   	 		} else if (packet.getCommandId() == SMPPPacket.UNBIND) {
+	   	 		} else {
 	   	 			
-	   	 			status = Status.DEAD;
-	   	 			
+	   	 			// for every other packet, we need to be bound
+		   	 		if (!status.equals(Status.BOUND)) {
+	   	 				response.setCommandStatus(ResponseStatus.INVALID_BIND_STATUS.getCommandStatus());
+	   	 			} else {
+		   	 		
+	   	 				// handle unbind request
+		   	 			if (packet.getCommandId() == SMPPPacket.UNBIND) {
+		   	 				status = Status.DEAD;
+		   	 			}
+		   	 			
+	   	 			}
 	   	 		}
-	   		 
+	   	 			
+	   	 		// send the response
 	   	 		link.write(response, false);
 	   	 	}
 	    }

@@ -77,7 +77,7 @@ public class SmppServer {
 	/**
 	 * The status of the server
 	 */
-	private Status status;
+	private Status status = Status.STOPPED;
 	
 	/**
 	 * The class that will process the SMPP messages.
@@ -216,6 +216,8 @@ public class SmppServer {
 			} catch (IOException e) {
 				log.error("IOException while acceping connections: " + e.getMessage(), e);
 			}
+			
+			try { serverSocket.close(); } catch (Exception e) {}
 			
 			// the server has stopped
 			log.info("<< SMPP Server stopped >>");
