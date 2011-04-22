@@ -42,7 +42,7 @@ public class MyPacketProcessor implements PacketProcessor {
 }
 </code></pre> 
 
-You will need to pass your @PacketProcessor@ implementation to the @SmppServer@ using the constructor or the setter method:
+Finally, you will need to pass your @PacketProcessor@ implementation to the @SmppServer@ using the constructor or the setter method:
 
 <pre><code>
 SmppServer server = new SmppServer(4444, new MyPacketProcessor());
@@ -54,4 +54,29 @@ server.setPacketProcessor(new MyPacketProcessor());
 
 If you don't provide a @PacketProcessor@ implementation, the default one (that always returns @ResponseStatus.OK@) will be used.
 
-That's it! You can start receiving connections now.
+h2. Sending SMPP requests to the client
+
+You can also send requests to the client (e.g. deliver_sm or unbind) through a session. For example:
+
+<pre>code>
+
+// first, we need to find the session to which we want to send the request
+SmppSession targetSession = null;
+
+Collection<SmppSession> sessions = server.getSessions();
+for (SmppSession s : sessions) {
+	// check if this is the session we are looking for
+	if (s.getSystemId().equals("test") && s.getBindType().equals(BindType.TRANSCEIVER)) {
+		targetSession = s;
+	}
+}
+
+// create the request and send
+DeliverSM ds = new DeliverSM();
+// ... set other fields
+
+targetSession.sendRequest(ds);
+
+</code></pre>
+
+That's it! As you can see, it's a simple, yet powerful design.
