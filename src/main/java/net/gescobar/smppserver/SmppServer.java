@@ -240,11 +240,17 @@ public class SmppServer {
 				log.error("IOException while acceping connections: " + e.getMessage(), e);
 			}
 			
+			// close the socket
 			try { serverSocket.close(); } catch (Exception e) {}
 			
+			// close all the sessions
+			for (SmppSession session : sessions) {
+				try { session.close(); } catch (Exception e) {}
+			}
+			
 			// the server has stopped
-			log.info("<< SMPP Server stopped >>");
 			status = Status.STOPPED;
+			log.info("<< SMPP Server stopped >>");
 			
 		}
 		

@@ -48,6 +48,11 @@ public class SmppSession {
 		 * The connection is opened and the client is bound.
 		 */
 		BOUND,
+		
+		/**
+		 * The connection is being closed
+		 */
+		CLOSING,
 
 		/**
 		 * The connection is closed.
@@ -171,6 +176,23 @@ public class SmppSession {
 		
 		link.write(request, true);
 	}
+	
+	/**
+	 * Closes the socket and stops the receiving thread.
+	 * 
+	 * @throws IOException if there is a problem closing the socket.
+	 */
+	public void close() throws IOException {
+		
+		if (this.status == Status.BOUND) {
+			
+			// TODO maybe we should send an unbind request first?
+		
+			this.status = Status.CLOSING;
+			link.close();
+			
+		}
+	}
 
 	/**
 	 * @return the status of the session.
@@ -260,8 +282,6 @@ public class SmppSession {
 	            log.error("Exception while receiving packets: " + x.getMessage(), x);
 	        }
 	        
-	        // TODO don't we need to close the link here? or somewhere else?
-	        
 	        status = Status.DEAD;
 	        
 		}
@@ -276,8 +296,8 @@ public class SmppSession {
 			int ioExceptions = 0;
 	        final int ioExceptionLimit = APIConfig.getInstance().getInt(APIConfig.TOO_MANY_IO_EXCEPTIONS, 5);
 	        
-	        // read packets!
-	        while (true) {
+	        // read packets while the connection is opened
+	        while (status.equals(Status.IDLE) || status.equals(Status.BOUND)) {
 	            
 	        	try {
 	        		// read a packet
