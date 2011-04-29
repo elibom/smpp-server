@@ -14,7 +14,7 @@ import ie.omk.smpp.util.SequenceNumberScheme;
 
 import java.io.IOException;
 
-import net.gescobar.smppserver.PacketProcessor.ResponseStatus;
+import net.gescobar.smppserver.PacketProcessor.Response;
 import net.gescobar.smppserver.util.PacketFactory;
 
 import org.slf4j.Logger;
@@ -115,8 +115,8 @@ public class SmppSession {
 		this(link, new PacketProcessor() {
 
 			@Override
-			public ResponseStatus processPacket(SMPPPacket packet) {
-				return ResponseStatus.OK;
+			public Response processPacket(SMPPPacket packet) {
+				return Response.OK;
 			}
 			
 		});
@@ -362,13 +362,13 @@ public class SmppSession {
 	   	 	if (packet.isRequest()) {
 	   		 
 	   	 		// call the handler
-	   	 		ResponseStatus responseStatus = null;
+	   	 		Response responseStatus = null;
 	   	 		try {
 	   	 			responseStatus = packetProcessor.processPacket(packet);
 	   	 			log.debug("packet processor returned: " + responseStatus);
 	   	 		} catch (Exception e) {
 	   	 			log.error("Exception calling the packet processor: " + e.getMessage(), e);
-	   	 			responseStatus = ResponseStatus.SYSTEM_ERROR;
+	   	 			responseStatus = Response.SYSTEM_ERROR;
 	   	 		}
 	   	 		
 	   	 		// create the response
@@ -391,11 +391,11 @@ public class SmppSession {
 	   	 				
 	   	 				// can't bind more than once
 	   	 				log.warn("session with system id " + systemId + " is already bound");
-	   	 				response.setCommandStatus(ResponseStatus.ALREADY_BOUND.getCommandStatus());
+	   	 				response.setCommandStatus(Response.ALREADY_BOUND.getCommandStatus());
 	   	 				
 	   	 			} else {
 	   			 
-		   	 			if (responseStatus.equals(ResponseStatus.OK)) {
+		   	 			if (responseStatus.equals(Response.OK)) {
 		   	 				Bind bind = (Bind) packet;
 			   			 
 		   	 				status = Status.BOUND;
@@ -416,8 +416,16 @@ public class SmppSession {
 	   	 			
 	   	 			// for every other packet, we need to be bound
 		   	 		if (!status.equals(Status.BOUND)) {
-	   	 				response.setCommandStatus(ResponseStatus.INVALID_BIND_STATUS.getCommandStatus());
+	   	 				response.setCommandStatus(Response.INVALID_BIND_STATUS.getCommandStatus());
 	   	 			} else {
+	   	 				
+	   	 				if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
+	   	 					int messageId = responseStatus.getMessageId();
+	   	 					
+	   	 					if (messageId > 0) {
+	   	 						response.setMessageId(messageId + "");
+	   	 					}
+	   	 				}
 		   	 		
 	   	 				// handle unbind request
 		   	 			if (packet.getCommandId() == SMPPPacket.UNBIND) {

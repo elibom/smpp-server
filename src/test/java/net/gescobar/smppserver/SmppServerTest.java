@@ -27,8 +27,8 @@ public class SmppServerTest {
 		PacketProcessor packetProcessor = new PacketProcessor() {
 
 			@Override
-			public ResponseStatus processPacket(SMPPPacket packet) {
-				return ResponseStatus.OK;
+			public Response processPacket(SMPPPacket packet) {
+				return Response.OK;
 			}
 			
 		};

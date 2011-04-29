@@ -22,20 +22,20 @@ To process SMPP packets, you will need to provide an implementation of the @net.
 public class MyPacketProcessor implements PacketProcessor {
 			
 	@Override
-	public ResponseStatus processPacket(SMPPPacket packet) {
+	public Response processPacket(SMPPPacket packet) {
 				
 		if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER
 	   	 		|| packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER
 	   	 		|| packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
 	   	 		
 	   	 	// check the credentials and return the corresponding SMPP command status
-	   	 	return ResponseStatus.OK;
+	   	 	return Response.OK;
 	   	 					
 	   	 } else if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
 	   	 		
 	   	 	// a message has arrived, what do you want to do with it?
 	   	 			
-	   	 	return ResponseStatus.INVALID_DEST_ADDRESS; // just an example
+	   	 	return Response.INVALID_DEST_ADDRESS; // just an example
 	   	 		
 	   	 }
 	}

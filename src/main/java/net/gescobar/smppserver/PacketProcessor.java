@@ -14,9 +14,12 @@ public interface PacketProcessor {
 	 * The possible values that can be returned in the {@link PacketProcessor#processPacket(SMPPPacket)} method.
 	 * Actually, they correspond to the values defined in the command status of the SMPP specification.
 	 * 
+	 * Additionally, this enum holds a messageId that can be set when returning a sumbit_sm response. If not set
+	 * (messageId==0) then the server will assign a messageId.
+	 * 
 	 * @author German Escobar
 	 */
-	public enum ResponseStatus {
+	public enum Response {
 		
 		OK(0),
 		INVALID_MESSAGE_LEN(1),
@@ -68,7 +71,9 @@ public interface PacketProcessor {
 
 		private int commandStatus;
 		
-		private ResponseStatus(int commandStatus) {
+		private int messageId;
+		
+		private Response(int commandStatus) {
 			this.commandStatus = commandStatus;
 		}
 
@@ -76,18 +81,29 @@ public interface PacketProcessor {
 			return commandStatus;
 		}
 
-		public void setCommandStatus(int commandStatus) {
-			this.commandStatus = commandStatus;
+		public int getMessageId() {
+			return messageId;
+		}
+
+		public void setMessageId(int messageId) {
+			this.messageId = messageId;
 		}
 		
+		public Response withMessageId(int messageId) {
+			setMessageId(messageId);
+			
+			return this;
+		}
+
 	}
 
 	/**
 	 * Process an SMPP Packet and returns a code that will be used as the command status for the response.
 	 * 
 	 * @param packet the SMPPPacket to be processed.
-	 * @return a ResponseStatus with the command status that will be returned to the client.
+	 * @return a Response with the command status that will be returned to the client and optionally a messageId
+	 * (if it is a submit_sm response).
 	 */
-	ResponseStatus processPacket(SMPPPacket packet);
+	Response processPacket(SMPPPacket packet);
 	
 }
