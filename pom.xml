@@ -4,9 +4,9 @@
 	
 	<groupId>net.gescobar</groupId>
 	<artifactId>smpp-server</artifactId>
-	<version>0.1.1</version>
 	
 	<name>SMPP Server</name>
+	<version>1.0.0-SNAPSHOT</version>
 	<description>A simple SMPP Server based on the smppapi library.</description>
 	
 	<dependencies>
