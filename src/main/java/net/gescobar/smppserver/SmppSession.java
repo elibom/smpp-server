@@ -420,10 +420,10 @@ public class SmppSession {
 	   	 			} else {
 	   	 				
 	   	 				if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
-	   	 					int messageId = responseStatus.getMessageId();
+	   	 					String messageId = responseStatus.getMessageId();
 	   	 					
-	   	 					if (messageId > 0) {
-	   	 						response.setMessageId(messageId + "");
+	   	 					if (messageId != null) {
+	   	 						response.setMessageId(messageId);
 	   	 					}
 	   	 				}
 		   	 		

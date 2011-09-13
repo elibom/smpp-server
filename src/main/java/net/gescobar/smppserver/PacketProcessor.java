@@ -71,7 +71,7 @@ public interface PacketProcessor {
 
 		private int commandStatus;
 		
-		private int messageId;
+		private String messageId;
 		
 		private Response(int commandStatus) {
 			this.commandStatus = commandStatus;
@@ -81,15 +81,15 @@ public interface PacketProcessor {
 			return commandStatus;
 		}
 
-		public int getMessageId() {
+		public String getMessageId() {
 			return messageId;
 		}
 
-		public void setMessageId(int messageId) {
+		public void setMessageId(String messageId) {
 			this.messageId = messageId;
 		}
 		
-		public Response withMessageId(int messageId) {
+		public Response withMessageId(String messageId) {
 			setMessageId(messageId);
 			
 			return this;
