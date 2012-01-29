@@ -101,9 +101,10 @@ public interface PacketProcessor {
 	 * Process an SMPP Packet and returns a code that will be used as the command status for the response.
 	 * 
 	 * @param packet the SMPPPacket to be processed.
+	 * @param responseSender used to send the Response to the client.
 	 * @return a Response with the command status that will be returned to the client and optionally a messageId
 	 * (if it is a submit_sm response).
 	 */
-	Response processPacket(SMPPPacket packet);
+	void processPacket(SMPPPacket packet, ResponseSender responseSender);
 	
 }

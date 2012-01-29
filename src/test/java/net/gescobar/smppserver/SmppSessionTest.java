@@ -113,8 +113,8 @@ public class SmppSessionTest {
 		smppSession.setPacketProcessor(new PacketProcessor() {
 
 			@Override
-			public Response processPacket(SMPPPacket packet) {
-				return Response.BIND_FAILED;
+			public void processPacket(SMPPPacket packet, ResponseSender responseSender) {
+				responseSender.sendResponse(Response.BIND_FAILED);
 			}
 			
 		});

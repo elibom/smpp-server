@@ -115,8 +115,8 @@ public class SmppSession {
 		this(link, new PacketProcessor() {
 
 			@Override
-			public Response processPacket(SMPPPacket packet) {
-				return Response.OK;
+			public void processPacket(SMPPPacket packet, ResponseSender responseSender) {
+				responseSender.sendResponse(Response.OK);
 			}
 			
 		});
@@ -358,88 +358,154 @@ public class SmppSession {
 	     */
 	    private void processPacket(SMPPPacket packet) throws IOException {
 	   	 	log.debug("received packet: " + packet);
-	   	 
-	   	 	if (packet.isRequest()) {
-	   		 
-	   	 		// call the handler
-	   	 		Response responseStatus = null;
-	   	 		try {
-	   	 			responseStatus = packetProcessor.processPacket(packet);
-	   	 			log.debug("packet processor returned: " + responseStatus);
-	   	 		} catch (Exception e) {
-	   	 			log.error("Exception calling the packet processor: " + e.getMessage(), e);
-	   	 			responseStatus = Response.SYSTEM_ERROR;
-	   	 		}
 	   	 		
-	   	 		// create the response
-	   	 		SMPPResponse response = null;
-	   	 		try {
-	   	 			response = (SMPPResponse) packetFactory.newResponse(packet);
-	   	 		} catch (BadCommandIDException e) {
-	   	 			throw new SMPPProtocolException("Unrecognised command received", e);
-	   	 		}
+	   	 	// if packet is a bind request and session is already bound, respond with error
+	   	 	if (isBindRequest(packet) && status.equals(Status.BOUND)) {
 	   	 		
-	   	 		// set the command status
-	   	 		response.setCommandStatus(responseStatus.getCommandStatus());
-	   		 
-	   	 		// bind is a special request
-	   	 		if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER
-	   	 				|| packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER
-	   	 				|| packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
-	   	 			
-	   	 			if (status.equals(Status.BOUND)) {
+	   	 		log.warn("session with system id " + systemId + " is already bound");
+	   	 		
+	   	 		SMPPResponse response = createResponse(packetFactory, packet, Response.ALREADY_BOUND.getCommandStatus());
+	   	 		sendResponse(response);
 	   	 				
-	   	 				// can't bind more than once
-	   	 				log.warn("session with system id " + systemId + " is already bound");
-	   	 				response.setCommandStatus(Response.ALREADY_BOUND.getCommandStatus());
-	   	 				
-	   	 			} else {
-	   			 
-		   	 			if (responseStatus.equals(Response.OK)) {
-		   	 				Bind bind = (Bind) packet;
-			   			 
-		   	 				status = Status.BOUND;
-			   			 
-		   	 				if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER) {
-				   				bindType = BindType.RECEIVER;
-				   			} else if (packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
-				   				bindType = BindType.TRANSMITTER;
-				   			} else if (packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER) {
-				   				bindType = BindType.TRANSCIEVER;
-				   			}
-			   			 
-		   	 				systemId = bind.getSystemId();
-		   	 			}
-		   	 			
-	   	 			}
-	   	 		} else {
-	   	 			
-	   	 			// for every other packet, we need to be bound
-		   	 		if (!status.equals(Status.BOUND)) {
-	   	 				response.setCommandStatus(Response.INVALID_BIND_STATUS.getCommandStatus());
-	   	 			} else {
-	   	 				
-	   	 				if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
-	   	 					String messageId = responseStatus.getMessageId();
-	   	 					
-	   	 					if (messageId != null) {
-	   	 						response.setMessageId(messageId);
-	   	 					}
-	   	 				}
-		   	 		
-	   	 				// handle unbind request
-		   	 			if (packet.getCommandId() == SMPPPacket.UNBIND) {
-		   	 				status = Status.DEAD;
-		   	 			}
-		   	 			
-	   	 			}
-	   	 		}
-	   	 			
-	   	 		// send the response
-	   	 		link.write(response, false);
+	   	 		return;
 	   	 	}
+	   	 	
+	   	 	// if not a bind packet and session is not bound, respond with error
+	   	 	if (!isBindRequest(packet) && !status.equals(Status.BOUND)) {
+	   	 		
+	   	 		SMPPResponse response = createResponse(packetFactory, packet, Response.INVALID_BIND_STATUS.getCommandStatus());
+	   	 		sendResponse(response);
+	   	 				
+	   	 		return;
+	   	 	}
+	   	 	
+	   	 	ResponseSender responseSender = new OnlyOnceResponseSender(packetFactory, packet);
+	   		 
+	   	 	try {
+	   	 		packetProcessor.processPacket(packet, responseSender);
+	   	 	} catch (Exception e) {
+	   	 		log.error("Exception calling the packet processor: " + e.getMessage(), e);
+	   	 	}
+	   		
 	    }
     	
+    }    
+
+    /**
+     * Helper method. Tells if the packet is a bind request (receiver, transceiver or transmitter) 
+     * 
+     * @param packet the SMPPPacket to test.
+     * @return true if the packet is a bind request, false otherwise.
+     */
+	private boolean isBindRequest(SMPPPacket packet) {
+		return packet.getCommandId() == SMPPPacket.BIND_RECEIVER 
+				|| packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER
+				|| packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER;
+	}
+	
+	/**
+	 * Helper method. Creates the corresponding SMPP response from an SMPPPacket.
+	 * 
+	 * @param packetFactory used to create the SMPPResponse.
+	 * @param packet the SMPPPacket from which we are creating the SMPPResponse.
+	 * @param commandStatus the SMPP command status to set in the response.
+	 * @return an SMPPResponse object from the packet argument and with the specified command status.
+	 * @throws SMPPProtocolException if the packet is not recognized. 
+	 */
+	private SMPPResponse createResponse(PacketFactory packetFactory, SMPPPacket packet, int commandStatus) throws SMPPProtocolException {
+		
+		SMPPResponse response = null;
+		try {
+			response = (SMPPResponse) packetFactory.newResponse(packet);
+			response.setCommandStatus(commandStatus);
+			
+			return response;
+		} catch (BadCommandIDException e) {
+			throw new SMPPProtocolException("Unrecognized command received", e);
+		}
+	}
+	
+	/**
+	 * Helper method. Sends the SMPPResponse to the client. 
+	 * 
+	 * @param response the SMPPResponse to be sent.
+	 * @throws IOException if a problem sending the response occurs.
+	 */
+	private void sendResponse(SMPPResponse response) throws IOException {
+	 	link.write(response, false);
+	}
+    
+	/**
+	 * 
+	 * @author German Escobar
+	 */
+    private class OnlyOnceResponseSender implements ResponseSender {
+    	
+    	private PacketFactory packetFactory;
+    	
+    	private SMPPPacket packet;
+    	
+    	private boolean responseSent = false;
+    	
+    	public OnlyOnceResponseSender(PacketFactory packetFactory, SMPPPacket packet) {
+    		this.packetFactory = packetFactory;
+    		this.packet = packet;
+    	}
+
+		@Override
+		public synchronized void sendResponse(Response response) {
+			
+			if (responseSent) {
+				log.warn("response for this request was already sent to the client ... ignoring");
+				
+				return;
+			}
+			
+			try {
+				SMPPResponse smppResponse = createResponse(packetFactory, packet, response.getCommandStatus());
+				
+				// bind is a special request
+	   	 		if (isBindRequest(packet)) {
+	   	 			
+	   	 			if (response.equals(Response.OK)) {
+		   	 			Bind bind = (Bind) packet;
+			   			 
+		   	 			status = Status.BOUND;
+			   			 
+		   	 			if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER) {
+				   			bindType = BindType.RECEIVER;
+				   		} else if (packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
+				   			bindType = BindType.TRANSMITTER;
+				   		} else if (packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER) {
+				   			bindType = BindType.TRANSCIEVER;
+				   		}
+			   			 
+		   	 			systemId = bind.getSystemId();
+		   	 		}
+		   	 			
+	   	 		} else {
+	   	 			
+	   	 			if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
+	   	 				String messageId = response.getMessageId();
+	   	 					
+	   	 				if (messageId != null) {
+	   	 					smppResponse.setMessageId(messageId);
+	   	 				}
+	   	 			}
+		   	 		
+	   	 			// handle unbind request
+		   	 		if (packet.getCommandId() == SMPPPacket.UNBIND) {
+		   	 			status = Status.DEAD;
+		   	 		}
+		   	 			
+	   	 		}
+	   	 		
+	   	 		SmppSession.this.sendResponse(smppResponse);
+	   	 		
+			} catch (Exception e) {
+				log.error("Exception sending response: " + e.getMessage(), e);
+			}	
+		}	
     }
 
 }
