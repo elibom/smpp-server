@@ -1,24 +1,24 @@
-h1. SMPP Server
+# SMPP Server
 
-A project based on the "smppapi":http://smppapi.sourceforge.net/ library that accepts client connections and allows you to easily handle SMPP packets.
+A project based on the [smppapi](http://smppapi.sourceforge.net/) library that accepts client connections and allows you to easily handle SMPP packets.
 
-h2. Starting and stopping
+## Starting and stopping
 
-To start the server you need to instantiate the @net.gescobar.smppserver.SmppServer@ class and call the @start()@ method:
+To start the server you need to instantiate the @net.gescobar.smppserver.SmppServer@ class and call the `start()` method:
 
-<pre><code>
+```java
 SmppServer server = new SmppServer(4444); // 4444 is the port, change it as needed
 server.start();
 		
 // somewhere else
 server.stop();
-</code></pre>
+```
 
-h2. Processing SMPP packets
+### Processing SMPP packets
 
-To process SMPP packets, you will need to provide an implementation of the @net.gescobar.smppserver.PacketProcessor@. For example:
+To process SMPP packets, you will need to provide an implementation of the `net.gescobar.smppserver.PacketProcessor`. For example:
 
-<pre><code>
+```java
 public class MyPacketProcessor implements PacketProcessor {
 			
 	@Override
@@ -40,25 +40,25 @@ public class MyPacketProcessor implements PacketProcessor {
 	   	 }
 	}
 }
-</code></pre> 
+```
 
-To use your @PacketProcessor@ implementation, set it in the @SmppServer@ using the constructor or the setter method:
+To use your `PacketProcessor` implementation, set it in the `SmppServer` using the constructor or the setter method:
 
-<pre><code>
+```java
 SmppServer server = new SmppServer(4444, new MyPacketProcessor());
 		
 // or
 		
 server.setPacketProcessor(new MyPacketProcessor());
-</code></pre>
+```
 
-If you don't provide a @PacketProcessor@ implementation, the default one (that always returns @Response.OK@) will be used.
+If you don't provide a `PacketProcessor` implementation, the default one (that always returns `Response.OK`) will be used.
 
-h2. Sending SMPP requests to the client
+## Sending SMPP requests to the client
 
 You can also send requests to the client (e.g. deliver_sm or unbind) through a session. For example:
 
-<pre><code>
+```java
 // first, we need to find the session to which we want to send the request
 SmppSession targetSession = null;
 
@@ -75,7 +75,6 @@ DeliverSM ds = new DeliverSM();
 // ... set other fields
 
 targetSession.sendRequest(ds);
+```
 
-</code></pre>
-
-That's it! As you can see, it's a simple, yet powerful design that will allow you to accept SMPP client connections, process incoming SMPP packets and send requests to the clients.
+*That's it!* As you can see, it's a simple, yet powerful design that will allow you to accept SMPP client connections, process incoming SMPP packets and send requests to the clients.
