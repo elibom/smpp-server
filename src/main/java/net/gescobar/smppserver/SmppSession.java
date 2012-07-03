@@ -435,7 +435,9 @@ public class SmppSession {
 	}
     
 	/**
-	 * This is the default {@link Response} implementation. It checks that the response is sent only once.
+	 * This is the {@link Response} implementation that is passed to the 
+	 * {@link PacketProcessor#processPacket(SMPPPacket, Response)} method. It checks that the response is sent only 
+	 * once.
 	 * 
 	 * @author German Escobar
 	 */
