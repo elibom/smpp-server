@@ -107,7 +107,7 @@ public class SmppServer {
 
 			@Override
 			public void processPacket(SMPPPacket packet, Response response) {
-				response.commandStatus(CommandStatus.OK).send();
+				response.setCommandStatus(CommandStatus.OK).send();
 			}
 			
 		});

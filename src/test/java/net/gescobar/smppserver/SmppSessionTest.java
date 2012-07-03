@@ -114,7 +114,7 @@ public class SmppSessionTest {
 
 			@Override
 			public void processPacket(SMPPPacket packet, Response response) {
-				response.commandStatus(CommandStatus.BIND_FAILED).send();
+				response.setCommandStatus(CommandStatus.BIND_FAILED).send();
 			}
 			
 		});
@@ -143,9 +143,9 @@ public class SmppSessionTest {
 			@Override
 			public void processPacket(SMPPPacket packet, Response response) {
 				if (packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER) {
-		            response.commandStatus(CommandStatus.OK).send();
+		            response.setCommandStatus(CommandStatus.OK).send();
 		         } else if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
-		            response.commandStatus(CommandStatus.OK).messageId("0123456789").send(); // just an example
+		            response.setCommandStatus(CommandStatus.OK).setMessageId("0123456789").send(); // just an example
 		         }
 			}
 			

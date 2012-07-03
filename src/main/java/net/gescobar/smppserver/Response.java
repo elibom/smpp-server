@@ -14,7 +14,7 @@ public interface Response {
 	 * 
 	 * @return itself for method chaining.
 	 */
-	Response commandStatus(CommandStatus commandStatus);
+	Response setCommandStatus(CommandStatus commandStatus);
 	
 	/**
 	 * Sets the message id of a SubmitSM packet. This method has no effect if you set it for another packet different 
@@ -24,7 +24,7 @@ public interface Response {
 	 * 
 	 * @return itself for method chaining.
 	 */
-	Response messageId(String messageId);
+	Response setMessageId(String messageId);
 	
 	/**
 	 * This method actually sends the response to the client. You must called explicitly after setting other fields.

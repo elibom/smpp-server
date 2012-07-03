@@ -13,22 +13,22 @@ public abstract class AbstractResponse implements Response {
 	private String messageId;
 	
 	@Override
-	public Response commandStatus(CommandStatus commandStatus) {
+	public Response setCommandStatus(CommandStatus commandStatus) {
 		this.commandStatus = commandStatus;
 		return this;
 	}
 	
-	public CommandStatus commandStatus() {
+	public CommandStatus getCommandStatus() {
 		return commandStatus;
 	}
 	
 	@Override
-	public Response messageId(String messageId) {
+	public Response setMessageId(String messageId) {
 		this.messageId = messageId;
 		return this;
 	}
 	
-	public String messageId() {
+	public String getMessageId() {
 		return messageId;
 	}
 

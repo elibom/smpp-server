@@ -29,13 +29,13 @@ public class MyPacketProcessor implements PacketProcessor {
 	   	 		|| packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
 	   	 		
 	   	 	// check the credentials and return the corresponding SMPP command status
-	   	 	response.status(CommandStatus.OK).send();
+	   	 	response.setCommandStatus(CommandStatus.OK).send();
 	   	 					
 	   	 } else if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
 	   	 		
 	   	 	// a message has arrived, what do you want to do with it?
 	   	 			
-	   	 	response.status(CommandStatus.INVALID_DEST_ADDRESS).send(); // just an example
+	   	 	response.setCommandStatus(CommandStatus.INVALID_DEST_ADDRESS).send(); // just an example
 	   	 		
 	   	 }
 	}
