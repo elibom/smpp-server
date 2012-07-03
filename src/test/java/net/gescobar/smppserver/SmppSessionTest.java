@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 
-import net.gescobar.smppserver.PacketProcessor.Response;
 import net.gescobar.smppserver.SmppSession.BindType;
 import net.gescobar.smppserver.SmppSession.Status;
 
@@ -59,7 +58,7 @@ public class SmppSessionTest {
 		// bind client
 		BindResp bindResponse = smppClient.bind(bindType, "test", null, null);
 		Assert.assertNotNull(bindResponse);
-		Assert.assertEquals(bindResponse.getCommandStatus(), Response.OK.getCommandStatus());
+		Assert.assertEquals(bindResponse.getCommandStatus(), CommandStatus.OK.getValue());
 		
 		// check the session
 		Assert.assertEquals(smppSession.getStatus(), Status.BOUND);
@@ -113,8 +112,8 @@ public class SmppSessionTest {
 		smppSession.setPacketProcessor(new PacketProcessor() {
 
 			@Override
-			public void processPacket(SMPPPacket packet, ResponseSender responseSender) {
-				responseSender.sendResponse(Response.BIND_FAILED);
+			public void processPacket(SMPPPacket packet, Response response) {
+				response.commandStatus(CommandStatus.BIND_FAILED).send();
 			}
 			
 		});
@@ -122,7 +121,7 @@ public class SmppSessionTest {
 		// bind client
 		BindResp bindResponse = smppClient.bind(Connection.TRANSCEIVER, "test", null, null);
 		Assert.assertNotNull(bindResponse);
-		Assert.assertEquals(bindResponse.getCommandStatus(), Response.BIND_FAILED.getCommandStatus());
+		Assert.assertEquals(bindResponse.getCommandStatus(), CommandStatus.BIND_FAILED.getValue());
 		
 		// check session
 		Assert.assertEquals(smppSession.getStatus(), Status.IDLE);
@@ -139,7 +138,7 @@ public class SmppSessionTest {
 		
 		BindResp bindResp = smppClient.bind(Connection.TRANSCEIVER, "test", null, null);
 		Assert.assertNotNull(bindResp);
-		Assert.assertEquals(bindResp.getCommandStatus(), Response.OK.getCommandStatus());
+		Assert.assertEquals(bindResp.getCommandStatus(), CommandStatus.OK.getValue());
 		
 		// send a DeliverSm
 		DeliverSM ds1 = new DeliverSM();
@@ -198,7 +197,7 @@ public class SmppSessionTest {
         // check the first bind response
         Assert.assertNotNull(packet);
         Assert.assertEquals(packet.getCommandId(), SMPPPacket.BIND_TRANSCEIVER_RESP);
-        Assert.assertEquals(packet.getCommandStatus(), Response.OK.getCommandStatus());
+        Assert.assertEquals(packet.getCommandStatus(), CommandStatus.OK.getValue());
         
         // read the second bind response
         packetsBytes = removeFirstPacket(packetsBytes);
@@ -207,7 +206,7 @@ public class SmppSessionTest {
         // check the second bind response
         Assert.assertNotNull(packet);
         Assert.assertEquals(packet.getCommandId(), SMPPPacket.BIND_TRANSCEIVER_RESP);
-        Assert.assertEquals(packet.getCommandStatus(), Response.ALREADY_BOUND.getCommandStatus());
+        Assert.assertEquals(packet.getCommandStatus(), CommandStatus.ALREADY_BOUND.getValue());
 	}
 	
 	@Test
@@ -238,7 +237,7 @@ public class SmppSessionTest {
         // check the first bind response
         Assert.assertNotNull(packet);
         Assert.assertEquals(packet.getCommandId(), SMPPPacket.SUBMIT_SM_RESP);
-        Assert.assertEquals(packet.getCommandStatus(), Response.INVALID_BIND_STATUS.getCommandStatus());
+        Assert.assertEquals(packet.getCommandStatus(), CommandStatus.INVALID_BIND_STATUS.getValue());
 		
 	}
 	

@@ -14,7 +14,6 @@ import ie.omk.smpp.util.SequenceNumberScheme;
 
 import java.io.IOException;
 
-import net.gescobar.smppserver.PacketProcessor.Response;
 import net.gescobar.smppserver.util.PacketFactory;
 
 import org.slf4j.Logger;
@@ -115,8 +114,8 @@ public class SmppSession {
 		this(link, new PacketProcessor() {
 
 			@Override
-			public void processPacket(SMPPPacket packet, ResponseSender responseSender) {
-				responseSender.sendResponse(Response.OK);
+			public void processPacket(SMPPPacket packet, Response response) {
+				response.commandStatus(CommandStatus.OK).send();
 			}
 			
 		});
@@ -364,7 +363,7 @@ public class SmppSession {
 	   	 		
 	   	 		log.warn("session with system id " + systemId + " is already bound");
 	   	 		
-	   	 		SMPPResponse response = createResponse(packetFactory, packet, Response.ALREADY_BOUND.getCommandStatus());
+	   	 		SMPPResponse response = createResponse(packetFactory, packet, CommandStatus.ALREADY_BOUND);
 	   	 		sendResponse(response);
 	   	 				
 	   	 		return;
@@ -373,13 +372,13 @@ public class SmppSession {
 	   	 	// if not a bind packet and session is not bound, respond with error
 	   	 	if (!isBindRequest(packet) && !status.equals(Status.BOUND)) {
 	   	 		
-	   	 		SMPPResponse response = createResponse(packetFactory, packet, Response.INVALID_BIND_STATUS.getCommandStatus());
+	   	 		SMPPResponse response = createResponse(packetFactory, packet, CommandStatus.INVALID_BIND_STATUS);
 	   	 		sendResponse(response);
 	   	 				
 	   	 		return;
 	   	 	}
 	   	 	
-	   	 	ResponseSender responseSender = new OnlyOnceResponseSender(packetFactory, packet);
+	   	 	Response responseSender = new OnlyOnceResponse(packetFactory, packet);
 	   		 
 	   	 	try {
 	   	 		packetProcessor.processPacket(packet, responseSender);
@@ -412,12 +411,12 @@ public class SmppSession {
 	 * @return an SMPPResponse object from the packet argument and with the specified command status.
 	 * @throws SMPPProtocolException if the packet is not recognized. 
 	 */
-	private SMPPResponse createResponse(PacketFactory packetFactory, SMPPPacket packet, int commandStatus) throws SMPPProtocolException {
+	private SMPPResponse createResponse(PacketFactory packetFactory, SMPPPacket packet, CommandStatus commandStatus) throws SMPPProtocolException {
 		
 		SMPPResponse response = null;
 		try {
 			response = (SMPPResponse) packetFactory.newResponse(packet);
-			response.setCommandStatus(commandStatus);
+			response.setCommandStatus(commandStatus.getValue());
 			
 			return response;
 		} catch (BadCommandIDException e) {
@@ -439,7 +438,7 @@ public class SmppSession {
 	 * 
 	 * @author German Escobar
 	 */
-    private class OnlyOnceResponseSender implements ResponseSender {
+    private class OnlyOnceResponse extends AbstractResponse {
     	
     	private PacketFactory packetFactory;
     	
@@ -447,27 +446,27 @@ public class SmppSession {
     	
     	private boolean responseSent = false;
     	
-    	public OnlyOnceResponseSender(PacketFactory packetFactory, SMPPPacket packet) {
+    	public OnlyOnceResponse(PacketFactory packetFactory, SMPPPacket packet) {
     		this.packetFactory = packetFactory;
     		this.packet = packet;
     	}
+    	
 
 		@Override
-		public synchronized void sendResponse(Response response) {
+		public synchronized void send() {
 			
 			if (responseSent) {
 				log.warn("response for this request was already sent to the client ... ignoring");
-				
 				return;
 			}
 			
 			try {
-				SMPPResponse smppResponse = createResponse(packetFactory, packet, response.getCommandStatus());
+				SMPPResponse smppResponse = createResponse( packetFactory, packet, commandStatus() );
 				
 				// bind is a special request
 	   	 		if (isBindRequest(packet)) {
 	   	 			
-	   	 			if (response.equals(Response.OK)) {
+	   	 			if (commandStatus().equals(CommandStatus.OK)) {
 		   	 			Bind bind = (Bind) packet;
 			   			 
 		   	 			status = Status.BOUND;
@@ -485,11 +484,10 @@ public class SmppSession {
 		   	 			
 	   	 		} else {
 	   	 			
-	   	 			if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
-	   	 				String messageId = response.getMessageId();
+	   	 			if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {;
 	   	 					
-	   	 				if (messageId != null) {
-	   	 					smppResponse.setMessageId(messageId);
+	   	 				if (messageId() != null) {
+	   	 					smppResponse.setMessageId( messageId() );
 	   	 				}
 	   	 			}
 		   	 		
