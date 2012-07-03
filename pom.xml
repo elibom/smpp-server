@@ -37,8 +37,8 @@
 	</dependencies>
 	
 	<scm>
-		<connection>scm:git:git://github.com/germanescobar/smpp-server.git</connection>
-		<url>scm:git:git://github.com/germanescobar/smpp-server.git</url>
+		<connection>scm:git:git@github.com:germanescobar/smpp-server.git</connection>
+		<url>scm:git:git@github.com:germanescobar/smpp-server.git</url>
 	</scm>
 	
 	<build>
