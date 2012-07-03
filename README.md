@@ -4,7 +4,7 @@ A project based on the [smppapi](http://smppapi.sourceforge.net/) library that a
 
 ## Starting and stopping
 
-To start the server you need to instantiate the @net.gescobar.smppserver.SmppServer@ class and call the `start()` method:
+To start the server you need to instantiate the `net.gescobar.smppserver.SmppServer` class and call the `start()` method:
 
 ```java
 SmppServer server = new SmppServer(4444); // 4444 is the port, change it as needed
