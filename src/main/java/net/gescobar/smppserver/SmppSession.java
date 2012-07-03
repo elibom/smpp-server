@@ -462,12 +462,12 @@ public class SmppSession {
 			}
 			
 			try {
-				SMPPResponse smppResponse = createResponse( packetFactory, packet, commandStatus() );
+				SMPPResponse smppResponse = createResponse( packetFactory, packet, getCommandStatus() );
 				
 				// bind is a special request
 	   	 		if (isBindRequest(packet)) {
 	   	 			
-	   	 			if (commandStatus().equals(CommandStatus.OK)) {
+	   	 			if (getCommandStatus().equals(CommandStatus.OK)) {
 		   	 			Bind bind = (Bind) packet;
 			   			 
 		   	 			status = Status.BOUND;
@@ -487,8 +487,8 @@ public class SmppSession {
 	   	 			
 	   	 			if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
 	   	 					
-	   	 				if (messageId() != null) {
-	   	 					smppResponse.setMessageId( messageId() );
+	   	 				if (getMessageId() != null) {
+	   	 					smppResponse.setMessageId( getMessageId() );
 	   	 				}
 	   	 			}
 		   	 		
