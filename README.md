@@ -1,5 +1,7 @@
 # SMPP Server
 
+[![Build Status](https://buildhive.cloudbees.com/job/germanescobar/job/smpp-server/badge/icon)](https://buildhive.cloudbees.com/job/germanescobar/job/smpp-server/)
+
 A project based on the [smppapi](http://smppapi.sourceforge.net/) library that accepts client connections and allows you to easily handle SMPP packets.
 
 ## Starting and stopping
