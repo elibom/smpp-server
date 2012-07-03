@@ -8,6 +8,7 @@ import ie.omk.smpp.message.BindTransceiver;
 import ie.omk.smpp.message.DeliverSM;
 import ie.omk.smpp.message.SMPPPacket;
 import ie.omk.smpp.message.SubmitSM;
+import ie.omk.smpp.message.SubmitSMResp;
 import ie.omk.smpp.net.StreamLink;
 import ie.omk.smpp.util.PacketFactory;
 import ie.omk.smpp.util.SMPPIO;
@@ -35,7 +36,7 @@ public class SmppSessionTest {
 
 	@Test
 	public void shouldCreateTranscieverSession() throws Exception {
-		shouldCreateSessionHelper(Connection.TRANSMITTER);
+		shouldCreateSessionHelper(Connection.TRANSCEIVER);
 	}
 	
 	@Test
@@ -125,6 +126,40 @@ public class SmppSessionTest {
 		
 		// check session
 		Assert.assertEquals(smppSession.getStatus(), Status.IDLE);
+		
+	}
+	
+	@Test(dependsOnMethods="shouldCreateTranscieverSession")
+	public void shouldSetCustomMessageId() throws Exception {
+		
+		// create the session and client
+		PeerFactory peerFactory = new PeerFactory();
+		SmppSession smppSession = peerFactory.getSmppSession();
+		Connection smppClient = peerFactory.getSmppClient();
+		
+		// set custom packet processor
+		smppSession.setPacketProcessor(new PacketProcessor() {
+
+			@Override
+			public void processPacket(SMPPPacket packet, Response response) {
+				if (packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER) {
+		            response.commandStatus(CommandStatus.OK).send();
+		         } else if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
+		            response.commandStatus(CommandStatus.OK).messageId("0123456789").send(); // just an example
+		         }
+			}
+			
+		});
+		
+		// bind client
+		BindResp bindResponse = smppClient.bind(Connection.TRANSCEIVER, "test", null, null);
+		Assert.assertNotNull(bindResponse);
+		Assert.assertEquals(bindResponse.getCommandStatus(), CommandStatus.OK.getValue());
+		
+		SubmitSM submitSm = new SubmitSM();
+		SubmitSMResp response = (SubmitSMResp) smppClient.sendRequest(submitSm);
+		Assert.assertEquals(response.getCommandStatus(), CommandStatus.OK.getValue());
+		Assert.assertEquals(response.getMessageId(), "0123456789");
 		
 	}
 	

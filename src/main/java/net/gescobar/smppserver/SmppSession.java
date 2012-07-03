@@ -150,7 +150,7 @@ public class SmppSession {
 		try {
 			link.open();
 		} catch (IOException e) {
-			throw new RuntimeException("Should not have happened as the streams are already open!", e);
+			throw new IllegalStateException("Should not have happened as the streams are already open!", e);
 		}
 		
 		// start the thread that will receive the packets
@@ -435,6 +435,7 @@ public class SmppSession {
 	}
     
 	/**
+	 * This is the default {@link Response} implementation. It checks that the response is sent only once.
 	 * 
 	 * @author German Escobar
 	 */
@@ -484,7 +485,7 @@ public class SmppSession {
 		   	 			
 	   	 		} else {
 	   	 			
-	   	 			if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {;
+	   	 			if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
 	   	 					
 	   	 				if (messageId() != null) {
 	   	 					smppResponse.setMessageId( messageId() );
