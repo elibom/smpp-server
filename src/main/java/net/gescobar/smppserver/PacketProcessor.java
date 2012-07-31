@@ -11,11 +11,11 @@ import ie.omk.smpp.message.SMPPPacket;
 public interface PacketProcessor {
 
 	/**
-	 * Process an SMPP Packet and returns a code that will be used as the command status for the response.
+	 * Process an SMPP Packet and uses the {@link ResponseSender} object to send a response back to the client.
 	 * 
 	 * @param packet the SMPPPacket to be processed.
-	 * @param response used to build and send the response to the client.
+	 * @param responseSender used to send the response to the client.
 	 */
-	void processPacket(SMPPPacket packet, Response response);
+	void processPacket(SMPPPacket packet, ResponseSender responseSender);
 	
 }

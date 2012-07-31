@@ -22,14 +22,14 @@ import org.slf4j.LoggerFactory;
  * 
  * <p>Starting the SMPP Server is as simple as instantiating this class and calling the {@link #start()} method:</p>
  * 
- * <code>
+ * <pre>
  * 	SmppServer server = new SmppServer();
  * 	server.start();
  * 	...
  * 
  *  // somewhere else
  *  server.stop();
- * </code>
+ * </pre>
  * 
  * <p>To process the SMPP packets you will need to provide an implementation of the {@link PacketProcessor} interface
  * using the constructor {@link #SmppServer(int, PacketProcessor)} or the setter {@link #setPacketProcessor(PacketProcessor)}.
@@ -106,8 +106,8 @@ public class SmppServer {
 		this(port, new PacketProcessor() {
 
 			@Override
-			public void processPacket(SMPPPacket packet, Response response) {
-				response.setCommandStatus(CommandStatus.OK).send();
+			public void processPacket(SMPPPacket packet, ResponseSender responseSender) {
+				responseSender.send( Response.OK );
 			}
 			
 		});

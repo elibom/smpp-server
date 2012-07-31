@@ -59,7 +59,7 @@ public class SmppSessionTest {
 		// bind client
 		BindResp bindResponse = smppClient.bind(bindType, "test", null, null);
 		Assert.assertNotNull(bindResponse);
-		Assert.assertEquals(bindResponse.getCommandStatus(), CommandStatus.OK.getValue());
+		Assert.assertEquals(bindResponse.getCommandStatus(), Response.OK.getCommandStatus());
 		
 		// check the session
 		Assert.assertEquals(smppSession.getStatus(), Status.BOUND);
@@ -113,8 +113,8 @@ public class SmppSessionTest {
 		smppSession.setPacketProcessor(new PacketProcessor() {
 
 			@Override
-			public void processPacket(SMPPPacket packet, Response response) {
-				response.setCommandStatus(CommandStatus.BIND_FAILED).send();
+			public void processPacket(SMPPPacket packet, ResponseSender responseSender) {
+				responseSender.send( Response.BIND_FAILED );
 			}
 			
 		});
@@ -122,7 +122,7 @@ public class SmppSessionTest {
 		// bind client
 		BindResp bindResponse = smppClient.bind(Connection.TRANSCEIVER, "test", null, null);
 		Assert.assertNotNull(bindResponse);
-		Assert.assertEquals(bindResponse.getCommandStatus(), CommandStatus.BIND_FAILED.getValue());
+		Assert.assertEquals(bindResponse.getCommandStatus(), Response.BIND_FAILED.getCommandStatus());
 		
 		// check session
 		Assert.assertEquals(smppSession.getStatus(), Status.IDLE);
@@ -141,11 +141,11 @@ public class SmppSessionTest {
 		smppSession.setPacketProcessor(new PacketProcessor() {
 
 			@Override
-			public void processPacket(SMPPPacket packet, Response response) {
+			public void processPacket(SMPPPacket packet, ResponseSender responseSender) {
 				if (packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER) {
-		            response.setCommandStatus(CommandStatus.OK).send();
+					responseSender.send( Response.OK );
 		         } else if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
-		            response.setCommandStatus(CommandStatus.OK).setMessageId("0123456789").send(); // just an example
+		        	responseSender.send( Response.OK.withMessageId("0123456789") );
 		         }
 			}
 			
@@ -154,11 +154,11 @@ public class SmppSessionTest {
 		// bind client
 		BindResp bindResponse = smppClient.bind(Connection.TRANSCEIVER, "test", null, null);
 		Assert.assertNotNull(bindResponse);
-		Assert.assertEquals(bindResponse.getCommandStatus(), CommandStatus.OK.getValue());
+		Assert.assertEquals(bindResponse.getCommandStatus(), Response.OK.getCommandStatus());
 		
 		SubmitSM submitSm = new SubmitSM();
 		SubmitSMResp response = (SubmitSMResp) smppClient.sendRequest(submitSm);
-		Assert.assertEquals(response.getCommandStatus(), CommandStatus.OK.getValue());
+		Assert.assertEquals(response.getCommandStatus(), Response.OK.getCommandStatus());
 		Assert.assertEquals(response.getMessageId(), "0123456789");
 		
 	}
@@ -173,7 +173,7 @@ public class SmppSessionTest {
 		
 		BindResp bindResp = smppClient.bind(Connection.TRANSCEIVER, "test", null, null);
 		Assert.assertNotNull(bindResp);
-		Assert.assertEquals(bindResp.getCommandStatus(), CommandStatus.OK.getValue());
+		Assert.assertEquals(bindResp.getCommandStatus(), Response.OK.getCommandStatus());
 		
 		// send a DeliverSm
 		DeliverSM ds1 = new DeliverSM();
@@ -232,7 +232,7 @@ public class SmppSessionTest {
         // check the first bind response
         Assert.assertNotNull(packet);
         Assert.assertEquals(packet.getCommandId(), SMPPPacket.BIND_TRANSCEIVER_RESP);
-        Assert.assertEquals(packet.getCommandStatus(), CommandStatus.OK.getValue());
+        Assert.assertEquals(packet.getCommandStatus(), Response.OK.getCommandStatus());
         
         // read the second bind response
         packetsBytes = removeFirstPacket(packetsBytes);
@@ -241,7 +241,7 @@ public class SmppSessionTest {
         // check the second bind response
         Assert.assertNotNull(packet);
         Assert.assertEquals(packet.getCommandId(), SMPPPacket.BIND_TRANSCEIVER_RESP);
-        Assert.assertEquals(packet.getCommandStatus(), CommandStatus.ALREADY_BOUND.getValue());
+        Assert.assertEquals(packet.getCommandStatus(), Response.ALREADY_BOUND.getCommandStatus());
 	}
 	
 	@Test
@@ -272,7 +272,7 @@ public class SmppSessionTest {
         // check the first bind response
         Assert.assertNotNull(packet);
         Assert.assertEquals(packet.getCommandId(), SMPPPacket.SUBMIT_SM_RESP);
-        Assert.assertEquals(packet.getCommandStatus(), CommandStatus.INVALID_BIND_STATUS.getValue());
+        Assert.assertEquals(packet.getCommandStatus(), Response.INVALID_BIND_STATUS.getCommandStatus());
 		
 	}
 	

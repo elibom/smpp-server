@@ -21,9 +21,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * <p>Represents an SMPP session with an SMPP client. When it receives an SMPP packet, it calls the 
- * {@link PacketProcessor#processPacket(SMPPPacket)} and responds with the returned value.</p>
- * 
- * <p>You can also send SMPP packets to the client using the ... </p>
+ * {@link PacketProcessor#processPacket(SMPPPacket, ResponseSender)} and responds with the returned value.</p>
  * 
  * @author German Escobar
  */
@@ -114,8 +112,8 @@ public class SmppSession {
 		this(link, new PacketProcessor() {
 
 			@Override
-			public void processPacket(SMPPPacket packet, Response response) {
-				response.setCommandStatus(CommandStatus.OK).send();
+			public void processPacket(SMPPPacket packet, ResponseSender responseSender) {
+				responseSender.send( Response.OK );
 			}
 			
 		});
@@ -363,7 +361,7 @@ public class SmppSession {
 	   	 		
 	   	 		log.warn("session with system id " + systemId + " is already bound");
 	   	 		
-	   	 		SMPPResponse response = createResponse(packetFactory, packet, CommandStatus.ALREADY_BOUND);
+	   	 		SMPPResponse response = createResponse(packetFactory, packet, Response.ALREADY_BOUND);
 	   	 		sendResponse(response);
 	   	 				
 	   	 		return;
@@ -372,13 +370,13 @@ public class SmppSession {
 	   	 	// if not a bind packet and session is not bound, respond with error
 	   	 	if (!isBindRequest(packet) && !status.equals(Status.BOUND)) {
 	   	 		
-	   	 		SMPPResponse response = createResponse(packetFactory, packet, CommandStatus.INVALID_BIND_STATUS);
+	   	 		SMPPResponse response = createResponse(packetFactory, packet, Response.INVALID_BIND_STATUS);
 	   	 		sendResponse(response);
 	   	 				
 	   	 		return;
 	   	 	}
 	   	 	
-	   	 	Response responseSender = new OnlyOnceResponse(packetFactory, packet);
+	   	 	ResponseSender responseSender = new OnlyOnceResponse(packetFactory, packet);
 	   		 
 	   	 	try {
 	   	 		packetProcessor.processPacket(packet, responseSender);
@@ -394,6 +392,7 @@ public class SmppSession {
      * Helper method. Tells if the packet is a bind request (receiver, transceiver or transmitter) 
      * 
      * @param packet the SMPPPacket to test.
+     * 
      * @return true if the packet is a bind request, false otherwise.
      */
 	private boolean isBindRequest(SMPPPacket packet) {
@@ -407,18 +406,19 @@ public class SmppSession {
 	 * 
 	 * @param packetFactory used to create the SMPPResponse.
 	 * @param packet the SMPPPacket from which we are creating the SMPPResponse.
-	 * @param commandStatus the SMPP command status to set in the response.
+	 * @param response the response object from which we are retrieving the command status.
+	 * 
 	 * @return an SMPPResponse object from the packet argument and with the specified command status.
 	 * @throws SMPPProtocolException if the packet is not recognized. 
 	 */
-	private SMPPResponse createResponse(PacketFactory packetFactory, SMPPPacket packet, CommandStatus commandStatus) throws SMPPProtocolException {
+	private SMPPResponse createResponse(PacketFactory packetFactory, SMPPPacket packet, Response response) throws SMPPProtocolException {
 		
-		SMPPResponse response = null;
+		SMPPResponse smppResponse = null;
 		try {
-			response = (SMPPResponse) packetFactory.newResponse(packet);
-			response.setCommandStatus(commandStatus.getValue());
+			smppResponse = (SMPPResponse) packetFactory.newResponse(packet);
+			smppResponse.setCommandStatus(response.getCommandStatus());
 			
-			return response;
+			return smppResponse;
 		} catch (BadCommandIDException e) {
 			throw new SMPPProtocolException("Unrecognized command received", e);
 		}
@@ -435,13 +435,13 @@ public class SmppSession {
 	}
     
 	/**
-	 * This is the {@link Response} implementation that is passed to the 
-	 * {@link PacketProcessor#processPacket(SMPPPacket, Response)} method. It checks that the response is sent only 
-	 * once.
+	 * This is the {@link ResponseSender} implementation that is passed to the 
+	 * {@link PacketProcessor#processPacket(SMPPPacket, ResponseSender)} method. It checks that the response is sent 
+	 * only once.
 	 * 
 	 * @author German Escobar
 	 */
-    private class OnlyOnceResponse extends AbstractResponse {
+    private class OnlyOnceResponse implements ResponseSender {
     	
     	private PacketFactory packetFactory;
     	
@@ -456,7 +456,7 @@ public class SmppSession {
     	
 
 		@Override
-		public synchronized void send() {
+		public synchronized void send(Response response) {
 			
 			if (responseSent) {
 				log.warn("response for this request was already sent to the client ... ignoring");
@@ -464,12 +464,14 @@ public class SmppSession {
 			}
 			
 			try {
-				SMPPResponse smppResponse = createResponse( packetFactory, packet, getCommandStatus() );
+				
+				SMPPResponse smppResponse = createResponse( packetFactory, packet, response );
+				int commandStatus = response.getCommandStatus();
 				
 				// bind is a special request
 	   	 		if (isBindRequest(packet)) {
 	   	 			
-	   	 			if (getCommandStatus().equals(CommandStatus.OK)) {
+	   	 			if (commandStatus == Response.OK.getCommandStatus()) {
 		   	 			Bind bind = (Bind) packet;
 			   			 
 		   	 			status = Status.BOUND;
@@ -489,8 +491,8 @@ public class SmppSession {
 	   	 			
 	   	 			if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
 	   	 					
-	   	 				if (getMessageId() != null) {
-	   	 					smppResponse.setMessageId( getMessageId() );
+	   	 				if (response.getMessageId() != null) {
+	   	 					smppResponse.setMessageId( response.getMessageId() );
 	   	 				}
 	   	 			}
 		   	 		
