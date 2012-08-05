@@ -2,7 +2,7 @@
 
 [![Build Status](https://buildhive.cloudbees.com/job/germanescobar/job/smpp-server/badge/icon)](https://buildhive.cloudbees.com/job/germanescobar/job/smpp-server/)
 
-A project based on the [smppapi](http://smppapi.sourceforge.net/) library that accepts client connections and allows you to easily handle SMPP packets.
+A project based on the [Cloudhopper SMPP](https://github.com/twitter/cloudhopper-smpp/) library that accepts client connections and allows you to easily handle SMPP packets.
 
 ## Starting and stopping
 
@@ -24,20 +24,18 @@ To process SMPP packets, you will need to provide an implementation of the `net.
 public class MyPacketProcessor implements PacketProcessor {
 			
 	@Override
-	public void processPacket(SMPPPacket packet, Response response) {
+	public void processPacket(SmppRequest packet, ResponseSender responseSender) {
 				
-		if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER
-	   	 		|| packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER
-	   	 		|| packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
+		if (packet.isBind()) {
 	   	 		
 	   	 	// check the credentials and return the corresponding SMPP command status
-	   	 	response.setCommandStatus(CommandStatus.OK).send();
+	   	 	responseSender.send( Response.OK ):
 	   	 					
-	   	 } else if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
+	   	 } else if (packet.getCommandId() == SmppPacket.SUBMIT_SM) {
 	   	 		
 	   	 	// a message has arrived, what do you want to do with it?
-	   	 			
-	   	 	response.setCommandStatus(CommandStatus.INVALID_DEST_ADDRESS).send(); // just an example
+	   	 	
+	   	 	responseSender.send( Response.INVALID_DEST_ADDRESS ); // just an example
 	   	 		
 	   	 }
 	}
@@ -73,7 +71,7 @@ for (SmppSession s : sessions) {
 }
 
 // create the request and send it
-DeliverSM ds = new DeliverSM();
+DeliverSm ds = new DeliverSm();
 // ... set other fields
 
 targetSession.sendRequest(ds);
