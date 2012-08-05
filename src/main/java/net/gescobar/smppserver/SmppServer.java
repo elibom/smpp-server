@@ -1,20 +1,23 @@
 package net.gescobar.smppserver;
 
-import ie.omk.smpp.message.SMPPPacket;
-import ie.omk.smpp.util.DefaultSequenceScheme;
-import ie.omk.smpp.util.SequenceNumberScheme;
-
 import java.io.IOException;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.SocketTimeoutException;
-import java.util.ArrayList;
+import java.net.InetSocketAddress;
 import java.util.Collection;
+import java.util.concurrent.Executors;
 
-import net.gescobar.smppserver.util.SocketLink;
+import net.gescobar.smppserver.packet.SmppRequest;
 
+import org.jboss.netty.bootstrap.ServerBootstrap;
+import org.jboss.netty.channel.Channel;
+import org.jboss.netty.channel.ChannelException;
+import org.jboss.netty.channel.ChannelFactory;
+import org.jboss.netty.channel.ChannelPipeline;
+import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.cloudhopper.smpp.channel.SmppChannelConstants;
+import com.cloudhopper.smpp.type.SmppChannelException;
 
 /**
  * <p>An SMPP Server that accepts client connections and process SMPP packets. Every time a connection is accepted,
@@ -81,20 +84,11 @@ public class SmppServer {
 	 */
 	private Status status = Status.STOPPED;
 	
-	/**
-	 * The class that will process the SMPP messages.
-	 */
-	private PacketProcessor packetProcessor;
+	private ServerBootstrap serverBootstrap;
 	
-	/**
-	 * The sequence number scheme used for delivering request to the client
-	 */
-	private SequenceNumberScheme sequenceNumberScheme;
+	private Channel serverChannel;
 	
-	/**
-	 * The created sessions.
-	 */
-	private Collection<SmppSession> sessions = new ArrayList<SmppSession>();
+	private SmppSessionManager sessionsManager;
 	
 	/**
 	 * Constructor. Creates an instance with the specified port and default {@link PacketProcessor} and 
@@ -104,9 +98,9 @@ public class SmppServer {
 	 */
 	public SmppServer(int port) {
 		this(port, new PacketProcessor() {
-
+			
 			@Override
-			public void processPacket(SMPPPacket packet, ResponseSender responseSender) {
+			public void processPacket(SmppRequest packet, ResponseSender responseSender) {
 				responseSender.send( Response.OK );
 			}
 			
@@ -121,22 +115,17 @@ public class SmppServer {
 	 * @param packetProcessor the {@link PacketProcessor} implementation that will process the SMPP messages.
 	 */
 	public SmppServer(int port, PacketProcessor packetProcessor) {
-		this(port, packetProcessor, new DefaultSequenceScheme());
-	}
-	
-	/**
-	 * Constructor. Creates an instance with the specified port, {@link PacketProcessor} implementation and 
-	 * {@link SequenceNumberScheme} implementation. 
-	 * 
-	 * @param port the server will accept connections in this port. 
-	 * @param packetProcessor the {@link PacketProcessor} implementation that will process the SMPP messages.
-	 * @param sequenceNumberScheme the {@link SequenceNumberScheme} implementation used to send requests to the 
-	 * client.
-	 */
-	public SmppServer(int port, PacketProcessor packetProcessor, SequenceNumberScheme sequenceNumberScheme) {
+		
 		this.port = port;
-		this.packetProcessor = packetProcessor;
-		this.sequenceNumberScheme = sequenceNumberScheme;
+		this.sessionsManager = new SmppSessionManager(packetProcessor);
+		
+		ChannelFactory channelFactory = new NioServerSocketChannelFactory(Executors.newCachedThreadPool(), 
+				Executors.newCachedThreadPool(), Runtime.getRuntime().availableProcessors() * 3);
+		this.serverBootstrap = new ServerBootstrap(channelFactory);
+		
+		ChannelPipeline pipeline = serverBootstrap.getPipeline();
+		pipeline.addLast(SmppChannelConstants.PIPELINE_SERVER_CONNECTOR_NAME, sessionsManager);
+		
 	}
 
 	/**
@@ -144,17 +133,22 @@ public class SmppServer {
 	 * 
 	 * @throws IOException if an I/O error occurs when opening the socket.
 	 */
-	public void start() throws IOException {
+	public void start() throws SmppChannelException {
+		
+		if (this.status != Status.STOPPED) {
+			log.warn("can't start SMPP Server, current status is " + this.status);
+			return;
+		}
 		
 		log.debug("starting the SMPP Server ... ");
 		this.status = Status.STARTING;
 		
-		// open the socket
-		ServerSocket serverSocket = new ServerSocket(port);
-		serverSocket.setSoTimeout(500);
-		
-		// start the thread that will accept the connections
-		new Thread(new ConnectionAcceptor(serverSocket)).start();
+		try {
+            this.serverChannel = this.serverBootstrap.bind( new InetSocketAddress(port) );
+            log.info("SMPP Server started on SMPP port [{}]", port);
+        } catch (ChannelException e) {
+            throw new SmppChannelException(e.getMessage(), e);
+        }
 		
 		log.info("<< SMPP Server running on port " + port + " >>");
 		this.status = Status.STARTED;
@@ -165,10 +159,36 @@ public class SmppServer {
 	 */
 	public void stop() {
 		
+		if (this.status != Status.STARTED) {
+			log.warn("can't stop SMPP Server, current status is " + this.status);
+			return;
+		}
+		
 		// this will signal the ConnectionThread to stop accepting connections
 		log.debug("stopping the SMPP Server ... ");
 		this.status = Status.STOPPING;
 		
+		sessionsManager.close();
+		
+        // clean up all external resources
+        if (this.serverChannel != null) {
+            this.serverChannel.close().awaitUninterruptibly();
+            this.serverChannel = null;
+        }
+		
+		// the server has stopped
+		status = Status.STOPPED;
+		log.info("<< SMPP Server stopped >>");
+		
+	}
+	
+	/**
+	 * Returns the opened sessions.
+	 * 
+	 * @return a collection of Session objects.
+	 */
+	public Collection<SmppSession> getSessions() {
+		return sessionsManager.getSessions();
 	}
 	
 	/**
@@ -179,81 +199,12 @@ public class SmppServer {
 	}
 	
 	/**
-	 * Returns the opened sessions.
-	 * 
-	 * @return a collection of Session objects.
-	 */
-	public Collection<SmppSession> getSessions() {
-		return sessions;
-	}
-	
-	/**
 	 * Sets the packet processor that will be used for new sessions. Old sessions will not be affected. 
 	 * 
 	 * @param packetProcessor the {@link PacketProcessor} implementation to be used.
 	 */
 	public void setPacketProcessor(PacketProcessor packetProcessor) {
-		this.packetProcessor = packetProcessor;
-	}
-	
-	/**
-	 * The thread that will accept the connections and create the sessions.
-	 * 
-	 * @author German Escobar
-	 */
-	private class ConnectionAcceptor implements Runnable {
-		
-		private ServerSocket serverSocket;
-		
-		public ConnectionAcceptor(ServerSocket serverSocket) {
-			this.serverSocket = serverSocket;
-		}
-		
-		@Override
-		public void run() {
-			
-			try {
-				
-				// keep running while the server is starting or started
-				while (status.equals(Status.STARTING) || status.equals(Status.STARTED)) {
-					
-					Socket socket = null;
-
-					try { socket = serverSocket.accept(); } catch (SocketTimeoutException e) {}
-
-					// check if we have received a connection
-					if (socket != null) {
-						
-						log.info("new connection accepted from " + socket.getRemoteSocketAddress());
-						
-						// create the session
-						SocketLink link = new SocketLink(socket);
-						SmppSession session = new SmppSession(link, packetProcessor, sequenceNumberScheme);
-						
-						// add the session to the collection
-						sessions.add(session);
-						
-					}
-				}
-				
-			} catch (IOException e) {
-				log.error("IOException while acceping connections: " + e.getMessage(), e);
-			}
-			
-			// close the socket
-			try { serverSocket.close(); } catch (Exception e) {}
-			
-			// close all the sessions
-			for (SmppSession session : sessions) {
-				try { session.close(); } catch (Exception e) {}
-			}
-			
-			// the server has stopped
-			status = Status.STOPPED;
-			log.info("<< SMPP Server stopped >>");
-			
-		}
-		
+		sessionsManager.setPacketProcessor(packetProcessor);
 	}
 	
 }
