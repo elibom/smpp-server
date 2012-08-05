@@ -1,51 +1,62 @@
 package net.gescobar.smppserver;
 
-import ie.omk.smpp.BadCommandIDException;
-import ie.omk.smpp.message.Bind;
-import ie.omk.smpp.message.SMPPPacket;
-import ie.omk.smpp.message.SMPPProtocolException;
-import ie.omk.smpp.message.SMPPRequest;
-import ie.omk.smpp.message.SMPPResponse;
-import ie.omk.smpp.net.StreamLink;
-import ie.omk.smpp.util.APIConfig;
-import ie.omk.smpp.util.DefaultSequenceScheme;
-import ie.omk.smpp.util.SMPPIO;
-import ie.omk.smpp.util.SequenceNumberScheme;
-
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import net.gescobar.smppserver.util.PacketFactory;
+import net.gescobar.smppserver.packet.SmppPacket;
+import net.gescobar.smppserver.packet.SmppRequest;
+import net.gescobar.smppserver.packet.SmppResponse;
+import net.gescobar.smppserver.packet.ch.PacketMapper;
 
+import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.channel.Channel;
+import org.jboss.netty.channel.ChannelFuture;
+import org.jboss.netty.channel.ChannelHandlerContext;
+import org.jboss.netty.channel.MessageEvent;
+import org.jboss.netty.channel.SimpleChannelHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.cloudhopper.commons.util.windowing.Window;
+import com.cloudhopper.commons.util.windowing.WindowFuture;
+import com.cloudhopper.smpp.SmppConstants;
+import com.cloudhopper.smpp.pdu.BaseBind;
+import com.cloudhopper.smpp.pdu.Pdu;
+import com.cloudhopper.smpp.pdu.PduRequest;
+import com.cloudhopper.smpp.pdu.PduResponse;
+import com.cloudhopper.smpp.pdu.SubmitSmResp;
+import com.cloudhopper.smpp.tlv.Tlv;
+import com.cloudhopper.smpp.transcoder.DefaultPduTranscoder;
+import com.cloudhopper.smpp.transcoder.DefaultPduTranscoderContext;
+import com.cloudhopper.smpp.transcoder.PduTranscoder;
+import com.cloudhopper.smpp.type.SmppChannelException;
+
 /**
- * <p>Represents an SMPP session with an SMPP client. When it receives an SMPP packet, it calls the 
- * {@link PacketProcessor#processPacket(SMPPPacket, ResponseSender)} and responds with the returned value.</p>
+ * 
  * 
  * @author German Escobar
  */
-public class SmppSession {
+public class SmppSession extends SimpleChannelHandler {
 	
 	private Logger log = LoggerFactory.getLogger(SmppSession.class);
-	
+
 	/**
 	 * Possible values for the status of the session.
 	 * 
 	 * @author German Escobar
 	 */
 	public enum Status {
-		
+
 		/**
 		 * The connection is opened but the client hasn't tried to bind or has tried but unsuccessfully.
 		 */
 		IDLE,
-		
+
 		/**
 		 * The connection is opened and the client is bound.
 		 */
 		BOUND,
-		
+
 		/**
 		 * The connection is being closed
 		 */
@@ -56,7 +67,7 @@ public class SmppSession {
 		 */
 		DEAD;
 	}
-	
+
 	/**
 	 * Possible values for the bind type of the session.
 	 * 
@@ -65,113 +76,116 @@ public class SmppSession {
 	public enum BindType {
 
 		TRANSMITTER,
-		
+
 		RECEIVER,
-		
+
 		TRANSCIEVER;
-		
+
 	}
-	
+
 	/**
 	 * The status of the session.
 	 */
 	private Status status = Status.IDLE;
-	
+
 	/**
 	 * The bind type of the session. Null if not bound.
 	 */
 	private BindType bindType;
-	
+
 	/**
 	 * The systemId that was used to bind.
 	 */
 	private String systemId;
-
-	/**
-	 * The underlying link used to receive and send packets from and to the client.
-	 */
-	private StreamLink link;
+	
+	private Channel channel;
 	
 	/**
 	 * The class that will process the SMPP messages.
 	 */
 	private PacketProcessor packetProcessor;
 	
-	/**
-	 * The sequence number scheme used for delivering request to the client
-	 */
-	private SequenceNumberScheme sequenceNumberScheme;
+	private PduTranscoder transcoder;
 	
 	/**
-	 * Constructor. Creates an instance with the specified link and default {@link PacketProcessor} and 
-	 * {@link SequenceNumberScheme} implementation. The link must be opened.
-	 * 
-	 * @param link the link used to receive and send packets from and to the client.
+	 * Used to set the sequence number to packets sent to clients
 	 */
-	public SmppSession(StreamLink link) {
-		this(link, new PacketProcessor() {
-
-			@Override
-			public void processPacket(SMPPPacket packet, ResponseSender responseSender) {
-				responseSender.send( Response.OK );
-			}
-			
-		});
-	}
+	private AtomicInteger sequenceId = new AtomicInteger(0);
 	
 	/**
-	 * Constructor. Creates an instance with the specified link and {@link PacketProcessor} implementation. A
-	 * default {@link SequenceNumberScheme} implementation is used. The link must be opened.
-	 * 
-	 * @param link the link used to receive and send packets from and to the client.
-	 * @param packetProcessor the {@link PacketProcessor} implementation that will process the SMPP messages.
+	 * Reusing the cloudhopper window mechanism to handle the response of packets sent through the 
+	 * {@link #sendRequest(SmppRequest)} method.
 	 */
-	public SmppSession(StreamLink link, PacketProcessor packetProcessor) {
-		this(link, packetProcessor, new DefaultSequenceScheme());
-	}
+	@SuppressWarnings("rawtypes")
+	private final Window<Integer,PduRequest,PduResponse> sendWindow = 
+			new Window<Integer,PduRequest,PduResponse>(10);
 	
 	/**
-	 * Constructor. Creates an instance with the specified link, {@link PacketProcessor} implementation and 
-	 * {@link SequenceNumberScheme} implementation.
+	 * Constructor.
 	 * 
-	 * @param link the link used to receive and send packets from and to the client.
-	 * @param packetProcessor the {@link PacketProcessor} implementation that will process the SMPP messages.
-	 * @param sequenceNumberScheme the {@link SequenceNumberScheme} implementation used to send requests to the 
-	 * client.
+	 * @param channel
+	 * @param packetProcessor
 	 */
-	public SmppSession(StreamLink link, PacketProcessor packetProcessor, SequenceNumberScheme sequenceNumberScheme) {
+	public SmppSession(Channel channel, PacketProcessor packetProcessor) {
 		
-		this.link = link;
+		if (channel == null) {
+			throw new IllegalArgumentException("no channel specified");
+		}
+		
+		if (packetProcessor == null) {
+			throw new IllegalArgumentException("no packetProcessor specified");
+		}
+		
+		this.channel = channel;
 		this.packetProcessor = packetProcessor;
-		this.sequenceNumberScheme = sequenceNumberScheme;
-		
-		try {
-			link.open();
-		} catch (IOException e) {
-			throw new IllegalStateException("Should not have happened as the streams are already open!", e);
-		}
-		
-		// start the thread that will receive the packets
-		new ReceiverThread().start();
+		this.transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
 	}
-	
-	/**
-	 * Sends an SMPP request to the client.
-	 * 
-	 * @param request the request packet to send to the client.
-	 * @throws IllegalStateException if the session is not bound.
-	 * @throws IOException if an I/O error occurs while writing the request packet to the network connection.
-	 */
-	public void sendRequest(SMPPRequest request) throws IllegalStateException, IOException {
+
+	@SuppressWarnings("rawtypes")
+	@Override
+	public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
 		
-		if (!status.equals(Status.BOUND)) {
-			throw new IllegalStateException("The session is not bound.");
+		Pdu pdu = (Pdu) e.getMessage();
+		
+		// handle responses
+		if (pdu.isResponse()) {
+			PduResponse pduResponse = (PduResponse) pdu;
+			this.sendWindow.complete(pduResponse.getSequenceNumber(), pduResponse);
+			
+			return;
 		}
 		
-		// set the sequence number
-		request.setSequenceNum(sequenceNumberScheme.nextNumber());
+		// if packet is a bind request and session is already bound, respond with error
+		if (BaseBind.class.isInstance(pdu) && status.equals(Status.BOUND)) {
+			
+			log.warn("session with system id " + systemId + " is already bound");
+			
+			PduResponse response = createResponse((PduRequest) pdu, Response.ALREADY_BOUND);
+			sendResponse(response);
+			
+			return;
+		}
 		
-		link.write(request, true);
+		// if not a bind packet and session is not bound, respond with error
+		if (!BaseBind.class.isInstance(pdu) && !status.equals(Status.BOUND)) {
+			
+			PduResponse response = createResponse((PduRequest) pdu, Response.INVALID_BIND_STATUS);
+			sendResponse(response);
+			
+			return;
+		}
+		
+		log.debug("[" + systemId + "] received request PDU: " + pdu);
+		
+		ResponseSender responseSender = new OnlyOnceResponse( (PduRequest) pdu );
+
+   	 	try {
+   	 		packetProcessor.processPacket( (SmppRequest) PacketMapper.map((PduRequest) pdu), responseSender );
+   	 	} catch (Exception f) {
+   	 		log.error("Exception calling the packet processor: " + f.getMessage(), f);
+   	 	}
+
+		
 	}
 	
 	/**
@@ -179,15 +193,15 @@ public class SmppSession {
 	 * 
 	 * @throws IOException if there is a problem closing the socket.
 	 */
-	public void close() throws IOException {
-		
+	public void close() {
+
 		if (this.status == Status.BOUND) {
-			
+
 			// TODO maybe we should send an unbind request first?
-		
+
 			this.status = Status.CLOSING;
-			link.close();
 			
+
 		}
 	}
 
@@ -205,11 +219,11 @@ public class SmppSession {
 	 * @throws IllegalStateException if the session is not bound.
 	 */
 	public BindType getBindType() throws IllegalStateException {
-		
+
 		if (!status.equals(Status.BOUND)) {
 			throw new IllegalStateException("The session is not bound.");
 		}
-		
+
 		return bindType;
 	}
 
@@ -218,14 +232,14 @@ public class SmppSession {
 	 * @throws IllegalStateException if the session is not bound.
 	 */
 	public String getSystemId() throws IllegalStateException {
-		
+
 		if (!status.equals(Status.BOUND)) {
 			throw new IllegalStateException("The session is not bound.");
 		}
-		
+
 		return systemId;
 	}
-	
+
 	/**
 	 * Sets the packet processor that will be used to process the packets.
 	 * 
@@ -234,206 +248,100 @@ public class SmppSession {
 	public void setPacketProcessor(PacketProcessor packetProcessor) {
 		this.packetProcessor = packetProcessor;
 	}
-	
+
 	/**
 	 * @return the {@link PacketProcessor} implementation that is being used in this session.
 	 */
 	public PacketProcessor getPacketProcessor() {
 		return packetProcessor;
 	}
-
-	/**
-	 * Sets the sequence number scheme that will be used when sending requests to the client
-	 * 
-	 * @param sequenceNumberScheme the {@link SequenceNumberScheme} implementation to be used.
-	 */
-	public void setSequenceNumberScheme(SequenceNumberScheme sequenceNumberScheme) {
-		this.sequenceNumberScheme = sequenceNumberScheme;
-	}
-
-	/**
-	 * @return the {@link SequenceNumberScheme} implementation that is being used in this session.
-	 */
-	public SequenceNumberScheme getSequenceNumberScheme() {
-		return sequenceNumberScheme;
-	}
-
-	/**
-	 * Thread that receives and process SMPP packets from the client.
-	 * 
-	 * @author German Escobar
-	 */
-    private class ReceiverThread extends Thread {
-    	
-    	/**
-    	 * Helper class to create SMPP packets.
-    	 */
-    	private PacketFactory packetFactory = new PacketFactory();
-
-		@Override
-		public void run() {
-			
-	        try {
-	            receiveAndProcessPackets();
-	        } catch (Exception x) {
-	            log.error("Exception while receiving packets: " + x.getMessage(), x);
-	        }
-	        
-	        status = Status.DEAD;
-	        
+	
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public SmppResponse sendRequest(SmppRequest packet) throws SmppException {
+		
+		if (packet == null) {
+			throw new IllegalArgumentException("No packet specified");
 		}
 		
-		/**
-		 * Helper method that will read the incoming packets. 
-		 * 
-		 * @throws IOException if there is a problem receiving the packets. 
-		 */
-		private void receiveAndProcessPackets() throws IOException {
-	       
-			int ioExceptions = 0;
-	        final int ioExceptionLimit = APIConfig.getInstance().getInt(APIConfig.TOO_MANY_IO_EXCEPTIONS, 5);
-	        
-	        // read packets while the connection is opened
-	        while (status.equals(Status.IDLE) || status.equals(Status.BOUND)) {
-	            
-	        	try {
-	        		// read a packet
-	                SMPPPacket packet = readNextPacket();
-	                if (packet == null) {
-	                    continue;
-	                }
-	                
-	                // process it
-	                processPacket(packet);
-	                
-	                ioExceptions = 0;
-	                
-	            } catch (IOException x) {
-	            	
-	            	// increase the exceptions and check if we have exceeded the limit
-	                ioExceptions++;
-	                if (ioExceptions >= ioExceptionLimit) {
-	                    throw x;
-	                }
-	                
-	                log.error("Exception receiving packet: " + x.getMessage(), x);
-	            }
-	        }
-
-	    }
-	    
-		/**
-		 * Helper method that will try to read one packet.
-		 * 
-		 * @return the SMPP packet that was received.
-		 * @throws IOException if there is a problem reading the packet.
-		 */
-	    private SMPPPacket readNextPacket() throws IOException {
-	    	try {
-	            SMPPPacket pak = null;
-	            int id = -1;
-
-	            byte[] buff = new byte[300];
-	            buff = link.read(buff);
-	            id = SMPPIO.bytesToInt(buff, 4, 4);
-	            pak = packetFactory.newInstance(id);
-
-	            if (pak != null) {
-	                pak.readFrom(buff, 0);
-	            }
-	            return pak;
-	        } catch (BadCommandIDException x) {
-	            throw new SMPPProtocolException("Unrecognised command received", x);
-	        }
-	    }
-	    
-	    /**
-	     * Helper method that will process the packet.
-	     * 
-	     * @param packet the packet to the processed.
-	     * @throws IOException if there is a problem writing the response
-	     */
-	    private void processPacket(SMPPPacket packet) throws IOException {
-	   	 	log.debug("received packet: " + packet);
-	   	 		
-	   	 	// if packet is a bind request and session is already bound, respond with error
-	   	 	if (isBindRequest(packet) && status.equals(Status.BOUND)) {
-	   	 		
-	   	 		log.warn("session with system id " + systemId + " is already bound");
-	   	 		
-	   	 		SMPPResponse response = createResponse(packetFactory, packet, Response.ALREADY_BOUND);
-	   	 		sendResponse(response);
-	   	 				
-	   	 		return;
-	   	 	}
-	   	 	
-	   	 	// if not a bind packet and session is not bound, respond with error
-	   	 	if (!isBindRequest(packet) && !status.equals(Status.BOUND)) {
-	   	 		
-	   	 		SMPPResponse response = createResponse(packetFactory, packet, Response.INVALID_BIND_STATUS);
-	   	 		sendResponse(response);
-	   	 				
-	   	 		return;
-	   	 	}
-	   	 	
-	   	 	ResponseSender responseSender = new OnlyOnceResponse(packetFactory, packet);
-	   		 
-	   	 	try {
-	   	 		packetProcessor.processPacket(packet, responseSender);
-	   	 	} catch (Exception e) {
-	   	 		log.error("Exception calling the packet processor: " + e.getMessage(), e);
-	   	 	}
-	   		
-	    }
-    	
-    }    
-
-    /**
-     * Helper method. Tells if the packet is a bind request (receiver, transceiver or transmitter) 
-     * 
-     * @param packet the SMPPPacket to test.
-     * 
-     * @return true if the packet is a bind request, false otherwise.
-     */
-	private boolean isBindRequest(SMPPPacket packet) {
-		return packet.getCommandId() == SMPPPacket.BIND_RECEIVER 
-				|| packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER
-				|| packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER;
-	}
-	
-	/**
-	 * Helper method. Creates the corresponding SMPP response from an SMPPPacket.
-	 * 
-	 * @param packetFactory used to create the SMPPResponse.
-	 * @param packet the SMPPPacket from which we are creating the SMPPResponse.
-	 * @param response the response object from which we are retrieving the command status.
-	 * 
-	 * @return an SMPPResponse object from the packet argument and with the specified command status.
-	 * @throws SMPPProtocolException if the packet is not recognized. 
-	 */
-	private SMPPResponse createResponse(PacketFactory packetFactory, SMPPPacket packet, Response response) throws SMPPProtocolException {
+		// send requests only if already bound
+		if (!status.equals(Status.BOUND)) {
+			throw new IllegalStateException("The session is not bound.");
+		}
 		
-		SMPPResponse smppResponse = null;
+		// only some packets can be sent to the client
+		if (packet.getCommandId() != SmppPacket.DELIVER_SM &&
+				packet.getCommandId() != SmppPacket.ENQUIRE_LINK) {
+			throw new IllegalArgumentException("Not allowed to send this packet to the client. Possible packets: " +
+					"deliver_sm, enquire_link");
+		}
+		
+		// set the sequence number if not assigned
+		if (packet.getSequenceNumber() == -1) {
+			packet.setSequenceNumber( sequenceId.incrementAndGet() );
+		}
+		
 		try {
-			smppResponse = (SMPPResponse) packetFactory.newResponse(packet);
-			smppResponse.setCommandStatus(response.getCommandStatus());
+			PduRequest pdu = (PduRequest) PacketMapper.map(packet);
 			
-			return smppResponse;
-		} catch (BadCommandIDException e) {
-			throw new SMPPProtocolException("Unrecognized command received", e);
+			// encode the pdu into a buffer
+	        ChannelBuffer buffer = transcoder.encode(pdu);
+	        
+	        WindowFuture<Integer,PduRequest,PduResponse> future = null;
+	        try {
+	            future = sendWindow.offer(pdu.getSequenceNumber(), pdu, 30000, 60000, true);
+	        } catch (Exception e) {
+	        	throw new SmppException(e);
+	        }
+	        
+	        ChannelFuture channelFuture = this.channel.write(buffer).await();
+	        
+	        // check if the write was a success
+	        if (!channelFuture.isSuccess()) {
+	            // the write failed, make sure to throw an exception
+	            throw new SmppChannelException(channelFuture.getCause().getMessage(), channelFuture.getCause());
+	        }
+	        
+	        future.await(15000);
+	        return (SmppResponse) PacketMapper.map( future.getResponse() );
+	        
+		} catch (Exception e) {
+			throw new SmppException(e);
+		}
+		
+	}
+	
+	@SuppressWarnings("rawtypes")
+	private PduResponse createResponse(PduRequest request, Response response) {
+		
+		PduResponse pduResponse = request.createResponse();
+		pduResponse.setCommandStatus( response.getCommandStatus() );
+		return pduResponse;
+		
+	}
+	
+	private void sendResponse(PduResponse response) {
+		
+		try {
+			
+			// encode the pdu into a buffer
+	        ChannelBuffer buffer = transcoder.encode(response);
+	
+	        // always log the PDU
+	        log.info("[" + systemId + "] sending response PDU: {}", response);
+	
+	        // write the pdu out & wait till its written
+	        ChannelFuture channelFuture = this.channel.write(buffer).await();
+	
+	        // check if the write was a success
+	        if (!channelFuture.isSuccess()) {
+	        	throw new SmppChannelException(channelFuture.getCause().getMessage(), channelFuture.getCause());
+	        }
+	        
+		} catch (Exception e) {
+			log.error("Fatal exception thrown while attempting to send response PDU: {}", e);
 		}
 	}
 	
-	/**
-	 * Helper method. Sends the SMPPResponse to the client. 
-	 * 
-	 * @param response the SMPPResponse to be sent.
-	 * @throws IOException if a problem sending the response occurs.
-	 */
-	private void sendResponse(SMPPResponse response) throws IOException {
-	 	link.write(response, false);
-	}
-    
 	/**
 	 * This is the {@link ResponseSender} implementation that is passed to the 
 	 * {@link PacketProcessor#processPacket(SMPPPacket, ResponseSender)} method. It checks that the response is sent 
@@ -443,20 +351,19 @@ public class SmppSession {
 	 */
     private class OnlyOnceResponse implements ResponseSender {
     	
-    	private PacketFactory packetFactory;
-    	
-    	private SMPPPacket packet;
+    	@SuppressWarnings("rawtypes")
+		private PduRequest pduRequest;
     	
     	private boolean responseSent = false;
     	
-    	public OnlyOnceResponse(PacketFactory packetFactory, SMPPPacket packet) {
-    		this.packetFactory = packetFactory;
-    		this.packet = packet;
+    	@SuppressWarnings("rawtypes")
+		public OnlyOnceResponse(PduRequest pduRequest) {
+    		this.pduRequest = pduRequest;
     	}
-    	
 
+		@SuppressWarnings("rawtypes")
 		@Override
-		public synchronized void send(Response response) {
+		public void send(Response response) {
 			
 			if (responseSent) {
 				log.warn("response for this request was already sent to the client ... ignoring");
@@ -465,50 +372,60 @@ public class SmppSession {
 			
 			try {
 				
-				SMPPResponse smppResponse = createResponse( packetFactory, packet, response );
+				PduResponse pduResponse = createResponse(pduRequest, response);
+				
+				int commandId = pduRequest.getCommandId();
 				int commandStatus = response.getCommandStatus();
 				
-				// bind is a special request
-	   	 		if (isBindRequest(packet)) {
-	   	 			
-	   	 			if (commandStatus == Response.OK.getCommandStatus()) {
-		   	 			Bind bind = (Bind) packet;
-			   			 
-		   	 			status = Status.BOUND;
-			   			 
-		   	 			if (packet.getCommandId() == SMPPPacket.BIND_RECEIVER) {
+				if (BaseBind.class.isInstance(pduRequest)) {
+					
+					if (commandStatus == Response.OK.getCommandStatus()) {
+						
+						status = Status.BOUND;
+
+		   	 			if (commandId == SmppConstants.CMD_ID_BIND_RECEIVER) {
 				   			bindType = BindType.RECEIVER;
-				   		} else if (packet.getCommandId() == SMPPPacket.BIND_TRANSMITTER) {
+				   		} else if (commandId == SmppConstants.CMD_ID_BIND_TRANSMITTER) {
 				   			bindType = BindType.TRANSMITTER;
-				   		} else if (packet.getCommandId() == SMPPPacket.BIND_TRANSCEIVER) {
+				   		} else if (commandId == SmppConstants.CMD_ID_BIND_TRANSCEIVER) {
 				   			bindType = BindType.TRANSCIEVER;
 				   		}
-			   			 
+
+		   	 			BaseBind bind = (BaseBind) pduRequest;
 		   	 			systemId = bind.getSystemId();
-		   	 		}
 		   	 			
-	   	 		} else {
-	   	 			
-	   	 			if (packet.getCommandId() == SMPPPacket.SUBMIT_SM) {
-	   	 					
-	   	 				if (response.getMessageId() != null) {
-	   	 					smppResponse.setMessageId( response.getMessageId() );
+		   	 			// this is important to support tlv parameters
+		   	 			pduResponse.addOptionalParameter( new Tlv(SmppConstants.TAG_SC_INTERFACE_VERSION, new byte[] { SmppConstants.VERSION_3_4 }) );
+		   	 			
+		   	 			log.info("[" + systemId + "] session created with bind type: " + bindType);
+					}
+					
+				} else {
+					
+					if (commandId == SmppConstants.CMD_ID_SUBMIT_SM) {
+						
+						if (response.getMessageId() != null) {
+							SubmitSmResp submitResp = (SubmitSmResp) pduResponse;
+							submitResp.setMessageId( response.getMessageId() );
 	   	 				}
-	   	 			}
-		   	 		
-	   	 			// handle unbind request
-		   	 		if (packet.getCommandId() == SMPPPacket.UNBIND) {
-		   	 			status = Status.DEAD;
-		   	 		}
-		   	 			
-	   	 		}
-	   	 		
-	   	 		SmppSession.this.sendResponse(smppResponse);
-	   	 		
+		
+					}
+					
+					// handle unbind request
+					if (commandId == SmppConstants.CMD_ID_UNBIND) {
+						status = Status.DEAD;
+						/* TODO notify SmppSessionsManager that the connection is dead */
+					}
+					
+				}
+				
+				SmppSession.this.sendResponse(pduResponse);
+				
 			} catch (Exception e) {
 				log.error("Exception sending response: " + e.getMessage(), e);
-			}	
-		}	
+			}
+		}
+    	
     }
-
+	
 }

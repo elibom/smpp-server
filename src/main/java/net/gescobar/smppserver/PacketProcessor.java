@@ -1,6 +1,9 @@
 package net.gescobar.smppserver;
 
-import ie.omk.smpp.message.SMPPPacket;
+import net.gescobar.smppserver.packet.SmppRequest;
+
+import com.cloudhopper.smpp.SmppSession;
+
 
 /**
  * This interface is implemented by those who want to process incoming SMPP packets received in a 
@@ -13,9 +16,9 @@ public interface PacketProcessor {
 	/**
 	 * Process an SMPP Packet and uses the {@link ResponseSender} object to send a response back to the client.
 	 * 
-	 * @param packet the SMPPPacket to be processed.
+	 * @param packet the {@link SmppRequest} to be processed.
 	 * @param responseSender used to send the response to the client.
 	 */
-	void processPacket(SMPPPacket packet, ResponseSender responseSender);
+	void processPacket(SmppRequest packet, ResponseSender responseSender);
 	
 }
