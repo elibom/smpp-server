@@ -5,7 +5,7 @@
 	<artifactId>smpp-server</artifactId>
 	
 	<name>SMPP Server</name>
-	<version>0.1.4-SNAPSHOT</version>
+	<version>0.2.0</version>
 	<description>A simple SMPP Server based on the cloudhopper library.</description>
 	
 	<dependencies>
