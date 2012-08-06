@@ -385,7 +385,9 @@ public class SmppServerTest {
 			
 			SmppSession session = smppServer.getSessions().iterator().next();
 			
-			client.unbind(1000);
+			client.unbind(DEFAULT_TIMEOUT);
+			
+			assertSessionsCreated(smppServer, 0, DEFAULT_TIMEOUT);
 			Assert.assertEquals( smppServer.getSessions().size(), 0 );
 			Assert.assertFalse( session.isBound() );
 			
