@@ -1,6 +1,5 @@
 package net.gescobar.smppserver.packet;
 
-import com.cloudhopper.smpp.SmppConstants;
 
 /**
  * 
@@ -33,7 +32,7 @@ public class DeliverSm extends SmppRequest {
     private byte[] shortMessage;
     
     public DeliverSm() {
-    	super(SmppConstants.CMD_ID_DELIVER_SM);
+    	super(DeliverSm.DELIVER_SM);
     }
 
 	public String getServiceType() {

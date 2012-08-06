@@ -3,6 +3,9 @@ package net.gescobar.smppserver;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 
 import net.gescobar.smppserver.packet.SmppRequest;
@@ -11,17 +14,24 @@ import org.jboss.netty.bootstrap.ServerBootstrap;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelException;
 import org.jboss.netty.channel.ChannelFactory;
+import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ChannelPipeline;
+import org.jboss.netty.channel.ChannelStateEvent;
+import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.cloudhopper.smpp.channel.SmppChannelConstants;
+import com.cloudhopper.smpp.channel.SmppSessionPduDecoder;
+import com.cloudhopper.smpp.transcoder.DefaultPduTranscoder;
+import com.cloudhopper.smpp.transcoder.DefaultPduTranscoderContext;
 import com.cloudhopper.smpp.type.SmppChannelException;
 
 /**
  * <p>An SMPP Server that accepts client connections and process SMPP packets. Every time a connection is accepted,
- * a new {@link SmppSession} object is created to handle the packets from that connection.</p>
+ * a new {@link SmppSession} object is created to handle the packets from that connection. It is only destroyed when 
+ * the client disconnects.</p>
  * 
  * <p>Starting the SMPP Server is as simple as instantiating this class and calling the {@link #start()} method:</p>
  * 
@@ -88,7 +98,9 @@ public class SmppServer {
 	
 	private Channel serverChannel;
 	
-	private SmppSessionManager sessionsManager;
+	private PacketProcessor packetProcessor;
+	
+	private Map<Channel,SmppSession> sessions = new ConcurrentHashMap<Channel,SmppSession>();
 	
 	/**
 	 * Constructor. Creates an instance with the specified port and default {@link PacketProcessor} and 
@@ -117,14 +129,14 @@ public class SmppServer {
 	public SmppServer(int port, PacketProcessor packetProcessor) {
 		
 		this.port = port;
-		this.sessionsManager = new SmppSessionManager(packetProcessor);
+		this.packetProcessor = packetProcessor;
 		
 		ChannelFactory channelFactory = new NioServerSocketChannelFactory(Executors.newCachedThreadPool(), 
 				Executors.newCachedThreadPool(), Runtime.getRuntime().availableProcessors() * 3);
 		this.serverBootstrap = new ServerBootstrap(channelFactory);
 		
 		ChannelPipeline pipeline = serverBootstrap.getPipeline();
-		pipeline.addLast(SmppChannelConstants.PIPELINE_SERVER_CONNECTOR_NAME, sessionsManager);
+		pipeline.addLast( SmppChannelConstants.PIPELINE_SERVER_CONNECTOR_NAME, new ServerChannelHandler() );
 		
 	}
 
@@ -168,7 +180,9 @@ public class SmppServer {
 		log.debug("stopping the SMPP Server ... ");
 		this.status = Status.STOPPING;
 		
-		sessionsManager.close();
+		for (Channel channel : sessions.keySet()) {
+			try { channel.disconnect().await(500); } catch (Exception e) {}
+		}
 		
         // clean up all external resources
         if (this.serverChannel != null) {
@@ -188,7 +202,7 @@ public class SmppServer {
 	 * @return a collection of Session objects.
 	 */
 	public Collection<SmppSession> getSessions() {
-		return sessionsManager.getSessions();
+		return Collections.unmodifiableCollection(sessions.values());
 	}
 	
 	/**
@@ -204,7 +218,47 @@ public class SmppServer {
 	 * @param packetProcessor the {@link PacketProcessor} implementation to be used.
 	 */
 	public void setPacketProcessor(PacketProcessor packetProcessor) {
-		sessionsManager.setPacketProcessor(packetProcessor);
+		
+		if (packetProcessor == null) {
+			throw new IllegalArgumentException("No packetProcessor specified");
+		}
+		
+		this.packetProcessor = packetProcessor;
+	}
+	
+	/**
+	 * This is the NIO server channel handler that manages connections and disconnections of clients.
+	 * 
+	 * @author German Escobar
+	 */
+	private class ServerChannelHandler extends SimpleChannelUpstreamHandler {
+
+		@Override
+		public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
+			
+			Channel channel = e.getChannel();
+
+			SmppSession session = new SmppSession(channel, packetProcessor);
+			
+			channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_PDU_DECODER_NAME, 
+	        		new SmppSessionPduDecoder(new DefaultPduTranscoder(new DefaultPduTranscoderContext())));
+			channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_WRAPPER_NAME, session);
+
+			sessions.put(channel, session);
+			
+		}
+		
+		@Override
+		public void channelDisconnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
+			
+			SmppSession session = sessions.remove(e.getChannel());
+			
+			if (session != null) {
+				log.info("[" + session.getSystemId() + "] disconnected");
+			}
+			
+		}
+		
 	}
 	
 }

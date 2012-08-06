@@ -1,7 +1,5 @@
 package net.gescobar.smppserver.packet;
 
-import com.cloudhopper.smpp.SmppConstants;
-
 /**
  * 
  * @author German Escobar
@@ -9,7 +7,7 @@ import com.cloudhopper.smpp.SmppConstants;
 public class DeliverSmResp extends SmppResponse {
 
 	public DeliverSmResp() {
-		super(SmppConstants.CMD_ID_DELIVER_SM_RESP);
+		super(DeliverSmResp.DELIVER_SM_RESP);
 	}
 	
 }

@@ -10,6 +10,7 @@ import net.gescobar.smppserver.packet.GenericNack;
 import net.gescobar.smppserver.packet.SmppPacket;
 import net.gescobar.smppserver.packet.SubmitSm;
 import net.gescobar.smppserver.packet.Tlv;
+import net.gescobar.smppserver.packet.Unbind;
 
 import com.cloudhopper.smpp.pdu.BaseBind;
 import com.cloudhopper.smpp.pdu.Pdu;
@@ -33,6 +34,8 @@ public class PacketMapper {
 		
 		if (BaseBind.class.isInstance(pdu)) {
 			packet = map( (BaseBind) pdu );
+		} else if (pdu.getCommandId() == SmppPacket.UNBIND) {
+			packet = new Unbind();
 		} else if (pdu.getCommandId() == SmppPacket.SUBMIT_SM) {
 			packet = map( (com.cloudhopper.smpp.pdu.SubmitSm) pdu );
 		} else if (pdu.getCommandId() == SmppPacket.DELIVER_SM_RESP) {
@@ -126,6 +129,8 @@ public class PacketMapper {
 			pdu = map( (DeliverSm) packet );
 		} else if (packet.getCommandId() == SmppPacket.ENQUIRE_LINK) {
 			pdu = new com.cloudhopper.smpp.pdu.EnquireLink();
+		} else if (packet.getCommandId() == SmppPacket.UNBIND) {
+			pdu = new com.cloudhopper.smpp.pdu.Unbind();
 		}
 		
 		if (pdu == null) {

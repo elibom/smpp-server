@@ -18,6 +18,7 @@ import net.gescobar.smppserver.packet.EnquireLink;
 import net.gescobar.smppserver.packet.SmppRequest;
 import net.gescobar.smppserver.packet.SmppResponse;
 import net.gescobar.smppserver.packet.SubmitSm;
+import net.gescobar.smppserver.packet.Unbind;
 
 import org.testng.Assert;
 import org.testng.annotations.Test;
@@ -33,6 +34,7 @@ import com.cloudhopper.smpp.pdu.BindTransceiverResp;
 import com.cloudhopper.smpp.pdu.PduRequest;
 import com.cloudhopper.smpp.pdu.PduResponse;
 import com.cloudhopper.smpp.pdu.SubmitSmResp;
+import com.cloudhopper.smpp.pdu.UnbindResp;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoder;
 import com.cloudhopper.smpp.transcoder.DefaultPduTranscoderContext;
 import com.cloudhopper.smpp.transcoder.PduTranscoder;
@@ -44,6 +46,8 @@ import com.cloudhopper.smpp.transcoder.PduTranscoder;
 public class SmppServerTest {
 	
 	private final int PORT = 4444;
+	
+	private final long DEFAULT_TIMEOUT = 2000;
 	
 	@Test
 	public void shouldCreateTranscieverSession() throws Exception {
@@ -76,7 +80,7 @@ public class SmppServerTest {
 				
 			bind(chBindType);
 					
-			assertSessionsCreated(smppServer, 1, 500);
+			assertSessionsCreated(smppServer, 1, DEFAULT_TIMEOUT);
 					
 			Collection<SmppSession> sessions = smppServer.getSessions();
 			Assert.assertNotNull(sessions);
@@ -138,7 +142,7 @@ public class SmppServerTest {
 			
 			com.cloudhopper.smpp.SmppSession client = bind(SmppBindType.TRANSCEIVER);
 			com.cloudhopper.smpp.pdu.SubmitSm submitSm = new com.cloudhopper.smpp.pdu.SubmitSm();
-			SubmitSmResp submitSmResp = client.submit(submitSm, 1000);
+			SubmitSmResp submitSmResp = client.submit(submitSm, DEFAULT_TIMEOUT);
 			
 			Assert.assertNotNull( submitSmResp );
 			Assert.assertEquals( submitSmResp.getMessageId(), "12000" );
@@ -171,7 +175,7 @@ public class SmppServerTest {
 			
 			// bind and wait until the session is created
 			bind(SmppBindType.TRANSCEIVER, sessionHandler);
-			assertSessionsCreated(smppServer, 1, 500);
+			assertSessionsCreated(smppServer, 1, DEFAULT_TIMEOUT);
 			
 			// retrieve the session
 			SmppSession smppSession = smppServer.getSessions().iterator().next();
@@ -179,7 +183,7 @@ public class SmppServerTest {
 			// send the request
 			DeliverSm deliverSm = new DeliverSm();
 			deliverSm.setSequenceNumber(sequenceNumber);
-			SmppResponse response = smppSession.sendRequest(deliverSm);
+			SmppResponse response = smppSession.sendRequest(deliverSm, DEFAULT_TIMEOUT);
 			
 			// validate
 			verify(sessionHandler, timeout(1000)).firePduRequestReceived(any(PduRequest.class));
@@ -207,7 +211,7 @@ public class SmppServerTest {
 						
 			// retrieve the session
 			SmppSession smppSession = smppServer.getSessions().iterator().next();
-			smppSession.sendRequest(null);
+			smppSession.sendRequest(null, 500);
 			
 		} finally {
 			stopServer(smppServer, 1000);
@@ -224,11 +228,11 @@ public class SmppServerTest {
 		try {
 			new Socket("localhost", PORT);
 			
-			assertSessionsCreated(smppServer, 1, 500);
+			assertSessionsCreated(smppServer, 1, DEFAULT_TIMEOUT);
 			
 			// retrieve the session
 			SmppSession smppSession = smppServer.getSessions().iterator().next();
-			smppSession.sendRequest(new EnquireLink());
+			smppSession.sendRequest(new EnquireLink(), DEFAULT_TIMEOUT);
 			
 		} finally {
 			stopServer(smppServer, 1000);
@@ -246,7 +250,7 @@ public class SmppServerTest {
 		try {
 			// bind and wait until the session is created
 			com.cloudhopper.smpp.SmppSession client = bind(SmppBindType.TRANSCEIVER);
-			assertSessionsCreated(smppServer, 1, 500);
+			assertSessionsCreated(smppServer, 1, DEFAULT_TIMEOUT);
 						
 			WindowFuture<Integer,PduRequest,PduResponse> future = client.sendRequestPdu(new BindTransceiver(), 1000, true);
 			
@@ -255,6 +259,63 @@ public class SmppServerTest {
 			
 			Assert.assertNotNull( response );
 			Assert.assertEquals( response.getCommandStatus(), SmppConstants.STATUS_ALYBND );
+			
+		} finally {
+			stopServer(smppServer, 1000);
+		}
+		
+	}
+	
+	@Test
+	public void shouldCloseConnectionOnClientUnbind() throws Exception {
+		
+		SmppServer smppServer = new SmppServer(PORT);
+		smppServer.start();
+		
+		try {
+			// bind and check that a session was created
+			com.cloudhopper.smpp.SmppSession client = bind(SmppBindType.TRANSCEIVER);
+			assertSessionsCreated(smppServer, 1, DEFAULT_TIMEOUT);
+			
+			SmppSession session = smppServer.getSessions().iterator().next();
+			
+			client.unbind(1000);
+			Assert.assertEquals( smppServer.getSessions().size(), 0 );
+			Assert.assertFalse( session.isBound() );
+			
+		} finally {
+			smppServer.stop();
+		}
+	}
+	
+	@Test
+	public void shouldCloseConnectionOnServerUnbind() throws Exception {
+		
+		SmppServer smppServer = new SmppServer(PORT);
+		smppServer.start();
+		
+		try {
+			
+			int sequenceNumber = 482;
+			
+			// mock the SmppSessionHandler and configure the return packet
+			SmppSessionHandler sessionHandler = mock(SmppSessionHandler.class);
+			UnbindResp unbindResp = new UnbindResp();
+			unbindResp.setSequenceNumber(sequenceNumber);
+			when(sessionHandler.firePduRequestReceived(any(PduRequest.class))).thenReturn(unbindResp);
+			
+			// bind and check that a session was created
+			bind(SmppBindType.TRANSCEIVER, sessionHandler);
+			assertSessionsCreated(smppServer, 1, DEFAULT_TIMEOUT);
+			
+			SmppSession session = smppServer.getSessions().iterator().next();
+			Unbind unbind = new Unbind();
+			unbind.setSequenceNumber(sequenceNumber);
+			session.sendRequest(unbind, 500);
+			
+			assertSessionsCreated(smppServer, 0, DEFAULT_TIMEOUT);
+			Assert.assertEquals(smppServer.getSessions().size(), 0);
+			Assert.assertFalse( session.isBound() );
 			
 		} finally {
 			stopServer(smppServer, 1000);

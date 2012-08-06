@@ -1,6 +1,5 @@
 package net.gescobar.smppserver.packet;
 
-import com.cloudhopper.smpp.SmppConstants;
 
 /**
  * 
@@ -9,6 +8,6 @@ import com.cloudhopper.smpp.SmppConstants;
 public class EnquireLink extends SmppRequest {
 
 	public EnquireLink() {
-		super(SmppConstants.CMD_ID_ENQUIRE_LINK);
+		super(EnquireLink.ENQUIRE_LINK);
 	}
 }

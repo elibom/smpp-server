@@ -1,6 +1,5 @@
 package net.gescobar.smppserver.packet;
 
-import com.cloudhopper.smpp.SmppConstants;
 
 /**
  * 
@@ -9,7 +8,7 @@ import com.cloudhopper.smpp.SmppConstants;
 public class GenericNack extends SmppResponse {
 
 	public GenericNack() {
-		super(SmppConstants.CMD_ID_GENERIC_NACK);
+		super(GenericNack.GENERIC_NACK);
 	}
 	
 }

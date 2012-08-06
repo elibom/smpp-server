@@ -1,7 +1,5 @@
 package net.gescobar.smppserver.packet;
 
-import com.cloudhopper.smpp.SmppConstants;
-
 /**
  * 
  * @author German Escobar
@@ -9,6 +7,6 @@ import com.cloudhopper.smpp.SmppConstants;
 public class EnquireLinkResp extends SmppResponse {
 
 	public EnquireLinkResp() {
-		super(SmppConstants.CMD_ID_ENQUIRE_LINK_RESP);
+		super(EnquireLinkResp.ENQUIRE_LINK_RESP);
 	}
 }

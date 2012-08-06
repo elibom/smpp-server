@@ -32,7 +32,14 @@ import com.cloudhopper.smpp.transcoder.PduTranscoder;
 import com.cloudhopper.smpp.type.SmppChannelException;
 
 /**
+ * <p>Represents an SMPP session with an SMPP client. When it receives an SMPP packet, it calls the 
+ * {@link PacketProcessor#processPacket(SmppRequest, ResponseSender)} and responds with the returned value.</p>
  * 
+ * <p><strong>Note:</strong> This object is created when a connection is accepted and destroyed when the client 
+ * disconnects. Notice that this could happen before/after the bind and unbind packets. A session that is created
+ * but still not bound is known to be in an idle state ({@link Status#IDLE}). A session that is was unbound (ie. 
+ * using a unbind packet) is known to be in a dead state ({@link Status#DEAD}) and should reject any further
+ * packet. </p>
  * 
  * @author German Escobar
  */
@@ -48,24 +55,19 @@ public class SmppSession extends SimpleChannelHandler {
 	public enum Status {
 
 		/**
-		 * The connection is opened but the client hasn't tried to bind or has tried but unsuccessfully.
+		 * The connection is open but the client hasn't tried to bind or has tried but unsuccessfully.
 		 */
-		IDLE,
+		OPEN,
 
 		/**
-		 * The connection is opened and the client is bound.
+		 * The connection is open and the client is bound.
 		 */
 		BOUND,
-
-		/**
-		 * The connection is being closed
-		 */
-		CLOSING,
-
+		
 		/**
 		 * The connection is closed.
 		 */
-		DEAD;
+		CLOSED;
 	}
 
 	/**
@@ -86,7 +88,7 @@ public class SmppSession extends SimpleChannelHandler {
 	/**
 	 * The status of the session.
 	 */
-	private Status status = Status.IDLE;
+	private Status status = Status.OPEN;
 
 	/**
 	 * The bind type of the session. Null if not bound.
@@ -98,6 +100,9 @@ public class SmppSession extends SimpleChannelHandler {
 	 */
 	private String systemId;
 	
+	/**
+	 * The channel from which we'll listen an to which we'll write
+	 */
 	private Channel channel;
 	
 	/**
@@ -124,6 +129,7 @@ public class SmppSession extends SimpleChannelHandler {
 	 * Constructor.
 	 * 
 	 * @param channel
+	 * @param sessionListener
 	 * @param packetProcessor
 	 */
 	public SmppSession(Channel channel, PacketProcessor packetProcessor) {
@@ -141,14 +147,18 @@ public class SmppSession extends SimpleChannelHandler {
 		this.transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
 	}
 
-	@SuppressWarnings("rawtypes")
+	/**
+	 * This is called when a message is received through the channel link. it handles request and response PDU's
+	 */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
 	@Override
 	public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
 		
 		Pdu pdu = (Pdu) e.getMessage();
 		
-		// handle responses
+		// handle responses to packets that were sent using the sendRequest(...) method
 		if (pdu.isResponse()) {
+			
 			PduResponse pduResponse = (PduResponse) pdu;
 			this.sendWindow.complete(pduResponse.getSequenceNumber(), pduResponse);
 			
@@ -156,21 +166,21 @@ public class SmppSession extends SimpleChannelHandler {
 		}
 		
 		// if packet is a bind request and session is already bound, respond with error
-		if (BaseBind.class.isInstance(pdu) && status.equals(Status.BOUND)) {
+		if (BaseBind.class.isInstance(pdu) && isBound()) {
 			
 			log.warn("session with system id " + systemId + " is already bound");
 			
 			PduResponse response = createResponse((PduRequest) pdu, Response.ALREADY_BOUND);
-			sendResponse(response);
+			send(response);
 			
 			return;
 		}
 		
 		// if not a bind packet and session is not bound, respond with error
-		if (!BaseBind.class.isInstance(pdu) && !status.equals(Status.BOUND)) {
+		if (!BaseBind.class.isInstance(pdu) && !isBound()) {
 			
 			PduResponse response = createResponse((PduRequest) pdu, Response.INVALID_BIND_STATUS);
-			sendResponse(response);
+			send(response);
 			
 			return;
 		}
@@ -184,25 +194,127 @@ public class SmppSession extends SimpleChannelHandler {
    	 	} catch (Exception f) {
    	 		log.error("Exception calling the packet processor: " + f.getMessage(), f);
    	 	}
-
+   	 	
+	}
+	
+	/**
+	 * Helper method. Creates a response PDU from the request and sets the command status from the {@link Response} 
+	 * object. 
+	 * 
+	 * @param request
+	 * @param response
+	 * 
+	 * @return the created PduResponse object
+	 */
+	private PduResponse createResponse(PduRequest<PduResponse> request, Response response) {
+		
+		PduResponse pduResponse = request.createResponse();
+		pduResponse.setCommandStatus( response.getCommandStatus() );
+		return pduResponse;
 		
 	}
 	
 	/**
-	 * Closes the socket and stops the receiving thread.
+	 * Helper method. Sends a PDU through the channel link
+	 * 
+	 * @param pdu the Pdu to be sent.
+	 */
+	private void send(Pdu pdu) {
+		
+		try {
+			
+			// encode the pdu into a buffer
+	        ChannelBuffer buffer = transcoder.encode(pdu);
+	
+	        // always log the PDU
+	        log.info("[" + systemId + "] sending PDU to client: {}", pdu);
+	
+	        // write the pdu out & wait till its written
+	        ChannelFuture channelFuture = this.channel.write(buffer).await();
+	
+	        // check if the write was a success
+	        if (!channelFuture.isSuccess()) {
+	        	throw new SmppChannelException(channelFuture.getCause().getMessage(), channelFuture.getCause());
+	        }
+	        
+		} catch (Exception e) {
+			log.error("Fatal exception thrown while attempting to send PDU to client: {}", e);
+		}
+	}
+	
+	/**
+	 * Sends an {@link SmppRequest} to the client.
+	 * 
+	 * @param packet the request packet to send to the client.
+	 * 
+	 * @return the received {@link SmppResponse}
+	 * @throws SmppException
+	 */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public SmppResponse sendRequest(SmppRequest packet, long timeout) throws SmppException {
+		
+		if (packet == null) {
+			throw new IllegalArgumentException("No packet specified");
+		}
+		
+		// send requests only if already bound
+		if (!isBound()) {
+			throw new IllegalStateException("The session is not bound.");
+		}
+		
+		// only some packets can be sent to the client
+		if (packet.getCommandId() != SmppPacket.DELIVER_SM &&
+				packet.getCommandId() != SmppPacket.ENQUIRE_LINK &&
+				packet.getCommandId() != SmppPacket.UNBIND) {
+			throw new IllegalArgumentException("Not allowed to send this packet to the client. Possible packets: " +
+					"deliver_sm, enquire_link, unbind");
+		}
+		
+		// set the sequence number if not assigned
+		if (packet.getSequenceNumber() == -1) {
+			packet.setSequenceNumber( sequenceId.incrementAndGet() );
+		}
+		
+		try {
+			PduRequest pdu = (PduRequest) PacketMapper.map(packet);
+	        
+	        WindowFuture<Integer,PduRequest,PduResponse> future = null;
+	        try {
+	            future = sendWindow.offer(pdu.getSequenceNumber(), pdu, 30000, 60000, true);
+	        } catch (Exception e) {
+	        	throw new SmppException(e);
+	        }
+	        
+	        send(pdu);
+	        
+	        // wait for the response to arrive
+	        /* TODO we could return a future to the client or notify a callback object */
+	        future.await(timeout);
+	        
+	        if (packet.getCommandId() == SmppPacket.UNBIND) {
+	        	close();
+	        }
+	        
+	        return (SmppResponse) PacketMapper.map( future.getResponse() );
+	        
+		} catch (Exception e) {
+			throw new SmppException(e);
+		}
+		
+	}
+	
+	/**
+	 * Closes the channel link and stops the receiving thread.
 	 * 
 	 * @throws IOException if there is a problem closing the socket.
 	 */
-	public void close() {
+	private void close() {
+		try {
+			channel.disconnect().await(500);
+		} catch (InterruptedException e) { }
 
-		if (this.status == Status.BOUND) {
-
-			// TODO maybe we should send an unbind request first?
-
-			this.status = Status.CLOSING;
-			
-
-		}
+		this.status = Status.CLOSED;
+		
 	}
 
 	/**
@@ -210,6 +322,15 @@ public class SmppSession extends SimpleChannelHandler {
 	 */
 	public Status getStatus() {
 		return status;
+	}
+	
+	/**
+	 * A utility method to easily check if the session is bound.
+	 * 
+	 * @return
+	 */
+	public boolean isBound() {
+		return status == Status.BOUND;
 	}
 
 	/**
@@ -239,7 +360,9 @@ public class SmppSession extends SimpleChannelHandler {
 
 		return systemId;
 	}
-
+	
+	
+	
 	/**
 	 * Sets the packet processor that will be used to process the packets.
 	 * 
@@ -256,92 +379,6 @@ public class SmppSession extends SimpleChannelHandler {
 		return packetProcessor;
 	}
 	
-	@SuppressWarnings({ "rawtypes", "unchecked" })
-	public SmppResponse sendRequest(SmppRequest packet) throws SmppException {
-		
-		if (packet == null) {
-			throw new IllegalArgumentException("No packet specified");
-		}
-		
-		// send requests only if already bound
-		if (!status.equals(Status.BOUND)) {
-			throw new IllegalStateException("The session is not bound.");
-		}
-		
-		// only some packets can be sent to the client
-		if (packet.getCommandId() != SmppPacket.DELIVER_SM &&
-				packet.getCommandId() != SmppPacket.ENQUIRE_LINK) {
-			throw new IllegalArgumentException("Not allowed to send this packet to the client. Possible packets: " +
-					"deliver_sm, enquire_link");
-		}
-		
-		// set the sequence number if not assigned
-		if (packet.getSequenceNumber() == -1) {
-			packet.setSequenceNumber( sequenceId.incrementAndGet() );
-		}
-		
-		try {
-			PduRequest pdu = (PduRequest) PacketMapper.map(packet);
-			
-			// encode the pdu into a buffer
-	        ChannelBuffer buffer = transcoder.encode(pdu);
-	        
-	        WindowFuture<Integer,PduRequest,PduResponse> future = null;
-	        try {
-	            future = sendWindow.offer(pdu.getSequenceNumber(), pdu, 30000, 60000, true);
-	        } catch (Exception e) {
-	        	throw new SmppException(e);
-	        }
-	        
-	        ChannelFuture channelFuture = this.channel.write(buffer).await();
-	        
-	        // check if the write was a success
-	        if (!channelFuture.isSuccess()) {
-	            // the write failed, make sure to throw an exception
-	            throw new SmppChannelException(channelFuture.getCause().getMessage(), channelFuture.getCause());
-	        }
-	        
-	        future.await(15000);
-	        return (SmppResponse) PacketMapper.map( future.getResponse() );
-	        
-		} catch (Exception e) {
-			throw new SmppException(e);
-		}
-		
-	}
-	
-	@SuppressWarnings("rawtypes")
-	private PduResponse createResponse(PduRequest request, Response response) {
-		
-		PduResponse pduResponse = request.createResponse();
-		pduResponse.setCommandStatus( response.getCommandStatus() );
-		return pduResponse;
-		
-	}
-	
-	private void sendResponse(PduResponse response) {
-		
-		try {
-			
-			// encode the pdu into a buffer
-	        ChannelBuffer buffer = transcoder.encode(response);
-	
-	        // always log the PDU
-	        log.info("[" + systemId + "] sending response PDU: {}", response);
-	
-	        // write the pdu out & wait till its written
-	        ChannelFuture channelFuture = this.channel.write(buffer).await();
-	
-	        // check if the write was a success
-	        if (!channelFuture.isSuccess()) {
-	        	throw new SmppChannelException(channelFuture.getCause().getMessage(), channelFuture.getCause());
-	        }
-	        
-		} catch (Exception e) {
-			log.error("Fatal exception thrown while attempting to send response PDU: {}", e);
-		}
-	}
-	
 	/**
 	 * This is the {@link ResponseSender} implementation that is passed to the 
 	 * {@link PacketProcessor#processPacket(SMPPPacket, ResponseSender)} method. It checks that the response is sent 
@@ -350,14 +387,12 @@ public class SmppSession extends SimpleChannelHandler {
 	 * @author German Escobar
 	 */
     private class OnlyOnceResponse implements ResponseSender {
-    	
-    	@SuppressWarnings("rawtypes")
-		private PduRequest pduRequest;
+
+		private PduRequest<PduResponse> pduRequest;
     	
     	private boolean responseSent = false;
-    	
-    	@SuppressWarnings("rawtypes")
-		public OnlyOnceResponse(PduRequest pduRequest) {
+
+		public OnlyOnceResponse(PduRequest<PduResponse> pduRequest) {
     		this.pduRequest = pduRequest;
     	}
 
@@ -402,7 +437,7 @@ public class SmppSession extends SimpleChannelHandler {
 					
 				} else {
 					
-					if (commandId == SmppConstants.CMD_ID_SUBMIT_SM) {
+					if (commandId == SmppPacket.SUBMIT_SM) {
 						
 						if (response.getMessageId() != null) {
 							SubmitSmResp submitResp = (SubmitSmResp) pduResponse;
@@ -411,15 +446,14 @@ public class SmppSession extends SimpleChannelHandler {
 		
 					}
 					
-					// handle unbind request
-					if (commandId == SmppConstants.CMD_ID_UNBIND) {
-						status = Status.DEAD;
-						/* TODO notify SmppSessionsManager that the connection is dead */
-					}
-					
 				}
 				
-				SmppSession.this.sendResponse(pduResponse);
+				SmppSession.this.send(pduResponse);
+				
+				// handle unbind request
+				if (commandId == SmppPacket.UNBIND) {	
+					close();
+				}
 				
 			} catch (Exception e) {
 				log.error("Exception sending response: " + e.getMessage(), e);

@@ -36,7 +36,7 @@ public class SubmitSm extends SmppRequest {
     private byte[] shortMessage;
     
     public SubmitSm() {
-    	super(SmppConstants.CMD_ID_SUBMIT_SM);
+    	super(SubmitSm.SUBMIT_SM);
     }
 
 	public String getServiceType() {
