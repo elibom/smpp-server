@@ -368,6 +368,36 @@ public class SmppServerTest {
 		
 	}
 	
+	@Test
+	public void shouldCallSmppSessionListener() throws Exception {
+		
+		SmppServer smppServer = new SmppServer(PORT);
+		smppServer.start();
+		
+		try {
+			
+			SmppSessionListener listener = mock(SmppSessionListener.class);
+			smppServer.setSessionListener(listener);
+			
+			// bind and check that a session was created
+			com.cloudhopper.smpp.SmppSession client = bind(SmppBindType.TRANSCEIVER);
+			assertSessionsCreated(smppServer, 1, DEFAULT_TIMEOUT);
+			
+			SmppSession session = smppServer.getSessions().iterator().next();
+			
+			client.unbind(1000);
+			Assert.assertEquals( smppServer.getSessions().size(), 0 );
+			Assert.assertFalse( session.isBound() );
+			
+			verify(listener).created(session);
+			verify(listener).destroyed(session);
+			
+		} finally {
+			smppServer.stop();
+		}
+		
+	}
+	
 	private com.cloudhopper.smpp.SmppSession bind(SmppBindType bindType) throws Exception {
 		return bind(bindType, null);
 	}

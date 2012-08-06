@@ -102,6 +102,8 @@ public class SmppServer {
 	
 	private Map<Channel,SmppSession> sessions = new ConcurrentHashMap<Channel,SmppSession>();
 	
+	private SmppSessionListener sessionListener;
+	
 	/**
 	 * Constructor. Creates an instance with the specified port and default {@link PacketProcessor} and 
 	 * {@link SequenceNumberScheme} implementations.
@@ -226,6 +228,10 @@ public class SmppServer {
 		this.packetProcessor = packetProcessor;
 	}
 	
+	public void setSessionListener(SmppSessionListener sessionListener) {
+		this.sessionListener = sessionListener;
+	}
+
 	/**
 	 * This is the NIO server channel handler that manages connections and disconnections of clients.
 	 * 
@@ -246,6 +252,10 @@ public class SmppServer {
 
 			sessions.put(channel, session);
 			
+			if (sessionListener != null) {
+				sessionListener.created(session);
+			}
+			
 		}
 		
 		@Override
@@ -255,6 +265,10 @@ public class SmppServer {
 			
 			if (session != null) {
 				log.info("[" + session.getSystemId() + "] disconnected");
+				
+				if (sessionListener != null) {
+					sessionListener.destroyed(session);
+				}
 			}
 			
 		}
