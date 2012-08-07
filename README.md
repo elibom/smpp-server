@@ -4,6 +4,29 @@
 
 A project based on the [Cloudhopper SMPP](https://github.com/twitter/cloudhopper-smpp/) library that accepts client connections and allows you to easily handle SMPP packets.
 
+## Configuration
+
+If you are using Maven, you just need to add the dependency and the repository to your pom.xml file:
+
+```xml
+
+    <dependencies>
+        <dependency>
+            <groupId>net.gescobar</groupId>
+            <artifactId>smpp-server</artifactId>
+            <version>0.3.0</version>
+        </dependency>
+    </dependencies>
+
+    <repositories>
+        <repository>  
+            <id>elibom</id>  
+            <url>http://repository.elibom.net/nexus/content/repositories/releases</url>  
+        </repository>
+    </repositories>
+
+```
+
 ## Starting and stopping
 
 To start the server you need to instantiate the `net.gescobar.smppserver.SmppServer` class and call the `start()` method:
@@ -74,7 +97,7 @@ for (SmppSession s : sessions) {
 DeliverSm ds = new DeliverSm();
 // ... set other fields
 
-targetSession.sendRequest(ds);
+DeliverSmResp deliverSmResp = targetSession.sendRequest(ds, 1000);
 ```
 
 *That's it!* As you can see, it's a simple, yet powerful design that will allow you to accept SMPP client connections, process incoming SMPP packets and send requests to the clients.
