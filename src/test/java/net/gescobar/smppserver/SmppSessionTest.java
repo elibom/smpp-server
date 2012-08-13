@@ -17,20 +17,20 @@ public class SmppSessionTest {
 	
 	@Test(expectedExceptions=IllegalStateException.class)
 	public void getBindTypeShouldFailIfNotBound() throws Exception {
-		SmppSession session = new SmppSession( mock(Channel.class), new DefaultPacketProcessor() );
+		SmppSession session = new SmppSession(463, mock(Channel.class), new DefaultPacketProcessor() );
 		session.getBindType();
 	}
 	
 	@Test(expectedExceptions=IllegalStateException.class)
 	public void getSystemIdShouldFailIfNotBound() throws Exception {
-		SmppSession session = new SmppSession( mock(Channel.class), new DefaultPacketProcessor() );
+		SmppSession session = new SmppSession(294, mock(Channel.class), new DefaultPacketProcessor() );
 		session.getSystemId();
 	}
 	
 	@Test
 	public void shouldCallCustomPacketProcessor() throws Exception {
 		PacketProcessor packetProcessor = mock(PacketProcessor.class);
-		SmppSession session = new SmppSession( mock(Channel.class), packetProcessor);
+		SmppSession session = new SmppSession(495, mock(Channel.class), packetProcessor);
 		
 		MessageEvent event = mock(MessageEvent.class);
 		when(event.getMessage()).thenReturn(new BindTransceiver());

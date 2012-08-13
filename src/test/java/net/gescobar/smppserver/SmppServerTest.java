@@ -47,7 +47,7 @@ public class SmppServerTest {
 	
 	private final int PORT = 4444;
 	
-	private final long DEFAULT_TIMEOUT = 2000;
+	private final long DEFAULT_TIMEOUT = 5000;
 	
 	@Test
 	public void shouldCreateTranscieverSession() throws Exception {
@@ -89,6 +89,9 @@ public class SmppServerTest {
 			SmppSession session = sessions.iterator().next();
 			Assert.assertNotNull(session);
 			Assert.assertEquals(session.getBindType(), bindType);
+			
+			Assert.assertEquals( smppServer.getCreatedSessions(), 1 );
+			Assert.assertEquals( smppServer.getDestroyedSessions(), 0 );
 			
 		} finally {	
 			stopServer(smppServer, 1000);

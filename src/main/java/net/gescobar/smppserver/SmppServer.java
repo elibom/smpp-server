@@ -5,9 +5,15 @@ import java.net.InetSocketAddress;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import net.gescobar.jmx.Management;
+import net.gescobar.jmx.annotation.Impact;
+import net.gescobar.jmx.annotation.ManagedAttribute;
+import net.gescobar.jmx.annotation.ManagedOperation;
 import net.gescobar.smppserver.packet.SmppRequest;
 
 import org.jboss.netty.bootstrap.ServerBootstrap;
@@ -36,7 +42,7 @@ import com.cloudhopper.smpp.type.SmppChannelException;
  * <p>Starting the SMPP Server is as simple as instantiating this class and calling the {@link #start()} method:</p>
  * 
  * <pre>
- * 	SmppServer server = new SmppServer();
+ * 	SmppServer server = new SmppServer(4444);
  * 	server.start();
  * 	...
  * 
@@ -83,6 +89,11 @@ public class SmppServer {
 		STARTED;
 		
 	}
+	
+	/**
+	 * A unique name for the server. Used to register the JMX MBean.
+	 */
+	private String name;
 
 	/**
 	 * The port in which we are going to listen the connections.
@@ -101,6 +112,12 @@ public class SmppServer {
 	private PacketProcessor packetProcessor;
 	
 	private Map<Channel,SmppSession> sessions = new ConcurrentHashMap<Channel,SmppSession>();
+	
+	private AtomicInteger createdSessions = new AtomicInteger();
+	
+	private AtomicInteger destroyedSessions = new AtomicInteger();
+	
+	private AtomicInteger sessionId = new AtomicInteger();
 	
 	private SmppSessionListener sessionListener;
 	
@@ -140,6 +157,17 @@ public class SmppServer {
 		ChannelPipeline pipeline = serverBootstrap.getPipeline();
 		pipeline.addLast( SmppChannelConstants.PIPELINE_SERVER_CONNECTOR_NAME, new ServerChannelHandler() );
 		
+		this.name = "Server-" + new Random().nextInt(10000);
+		registerJMXBean();
+		
+	}
+	
+	public void registerJMXBean() {
+		try {
+			Management.register( this, "net.gescobar.smppserver:type=" + name );
+		} catch (Exception e) {
+			log.warn("Couldn't register SMPP Server as JMX Bean: " + e.getMessage(), e);
+		}
 	}
 
 	/**
@@ -147,6 +175,7 @@ public class SmppServer {
 	 * 
 	 * @throws IOException if an I/O error occurs when opening the socket.
 	 */
+	@ManagedOperation(impact=Impact.ACTION)
 	public void start() throws SmppChannelException {
 		
 		if (this.status != Status.STOPPED) {
@@ -171,6 +200,7 @@ public class SmppServer {
 	/**
 	 * Stops the server gracefully.
 	 */
+	@ManagedOperation(impact=Impact.ACTION)
 	public void stop() {
 		
 		if (this.status != Status.STARTED) {
@@ -214,6 +244,26 @@ public class SmppServer {
 		return status;
 	}
 	
+	@ManagedAttribute
+	public String getStatusString() {
+		return status.name();
+	}
+	
+	@ManagedAttribute
+	public int getActiveSessions() {
+		return sessions.size();
+	}
+	
+	@ManagedAttribute
+	public int getCreatedSessions() {
+		return createdSessions.get();
+	}
+
+	@ManagedAttribute
+	public int getDestroyedSessions() {
+		return destroyedSessions.get();
+	}
+
 	/**
 	 * Sets the packet processor that will be used for new sessions. Old sessions will not be affected. 
 	 * 
@@ -244,13 +294,21 @@ public class SmppServer {
 			
 			Channel channel = e.getChannel();
 
-			SmppSession session = new SmppSession(channel, packetProcessor);
+			int id = sessionId.incrementAndGet();
+			SmppSession session = new SmppSession(id, channel, packetProcessor);
 			
 			channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_PDU_DECODER_NAME, 
 	        		new SmppSessionPduDecoder(new DefaultPduTranscoder(new DefaultPduTranscoderContext())));
 			channel.getPipeline().addLast(SmppChannelConstants.PIPELINE_SESSION_WRAPPER_NAME, session);
 
 			sessions.put(channel, session);
+			createdSessions.incrementAndGet();
+			
+			try {
+				Management.register( session, "net.gescobar.smppserver:type=Sessions,id=" + session.getId() );
+			} catch (Exception f) {
+				log.warn("Couldn't register session with id " + id + " as a JMX MBean: " + f.getMessage(), f);
+			}
 			
 			if (sessionListener != null) {
 				sessionListener.created(session);
@@ -264,7 +322,14 @@ public class SmppServer {
 			SmppSession session = sessions.remove(e.getChannel());
 			
 			if (session != null) {
-				log.info("[" + session.getSystemId() + "] disconnected");
+				log.info("[session-id=" + session.getId() + "] disconnected");
+				
+				destroyedSessions.incrementAndGet();
+				try {
+					Management.unregister("net.gescobar.smppserver:type=Sessions,id=" + session.getId());
+				} catch (Exception f) {
+					log.warn("Exception unregistering session " + session.getId() + ": " + f.getMessage(), f);
+				}
 				
 				if (sessionListener != null) {
 					sessionListener.destroyed(session);

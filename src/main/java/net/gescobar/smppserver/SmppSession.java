@@ -1,11 +1,15 @@
 package net.gescobar.smppserver;
 
 import java.io.IOException;
+import java.util.Date;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import net.gescobar.jmx.annotation.ManagedAttribute;
+import net.gescobar.jmx.annotation.ManagedOperation;
 import net.gescobar.smppserver.packet.SmppPacket;
 import net.gescobar.smppserver.packet.SmppRequest;
 import net.gescobar.smppserver.packet.SmppResponse;
+import net.gescobar.smppserver.packet.Unbind;
 import net.gescobar.smppserver.packet.ch.PacketMapper;
 
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -84,6 +88,8 @@ public class SmppSession extends SimpleChannelHandler {
 		TRANSCIEVER;
 
 	}
+	
+	private int sessionId;
 
 	/**
 	 * The status of the session.
@@ -99,6 +105,11 @@ public class SmppSession extends SimpleChannelHandler {
 	 * The systemId that was used to bind.
 	 */
 	private String systemId;
+	
+	/**
+	 * The time in which the session was created.
+	 */
+	private Date creationTime;
 	
 	/**
 	 * The channel from which we'll listen an to which we'll write
@@ -128,11 +139,12 @@ public class SmppSession extends SimpleChannelHandler {
 	/**
 	 * Constructor.
 	 * 
+	 * @param sessionId
 	 * @param channel
 	 * @param sessionListener
 	 * @param packetProcessor
 	 */
-	public SmppSession(Channel channel, PacketProcessor packetProcessor) {
+	public SmppSession(int sessionId, Channel channel, PacketProcessor packetProcessor) {
 		
 		if (channel == null) {
 			throw new IllegalArgumentException("no channel specified");
@@ -142,9 +154,16 @@ public class SmppSession extends SimpleChannelHandler {
 			throw new IllegalArgumentException("no packetProcessor specified");
 		}
 		
+		this.sessionId = sessionId;
 		this.channel = channel;
 		this.packetProcessor = packetProcessor;
 		this.transcoder = new DefaultPduTranscoder(new DefaultPduTranscoderContext());
+		this.creationTime = new Date();
+	}
+	
+	@ManagedAttribute
+	public String getId() {
+		return "session-" + sessionId;
 	}
 
 	/**
@@ -168,7 +187,7 @@ public class SmppSession extends SimpleChannelHandler {
 		// if packet is a bind request and session is already bound, respond with error
 		if (BaseBind.class.isInstance(pdu) && isBound()) {
 			
-			log.warn("session with system id " + systemId + " is already bound");
+			log.warn(getLogHead() + "session with system id " + systemId + " is already bound");
 			
 			PduResponse response = createResponse((PduRequest) pdu, Response.ALREADY_BOUND);
 			send(response);
@@ -185,7 +204,7 @@ public class SmppSession extends SimpleChannelHandler {
 			return;
 		}
 		
-		log.debug("[" + systemId + "] received request PDU: " + pdu);
+		log.debug(getLogHead() + "received request PDU: " + pdu);
 		
 		ResponseSender responseSender = new OnlyOnceResponse( (PduRequest) pdu );
 
@@ -227,7 +246,7 @@ public class SmppSession extends SimpleChannelHandler {
 	        ChannelBuffer buffer = transcoder.encode(pdu);
 	
 	        // always log the PDU
-	        log.info("[" + systemId + "] sending PDU to client: {}", pdu);
+	        log.info(getLogHead() + "sending PDU to client: {}", pdu);
 	
 	        // write the pdu out & wait till its written
 	        ChannelFuture channelFuture = this.channel.write(buffer).await();
@@ -238,7 +257,20 @@ public class SmppSession extends SimpleChannelHandler {
 	        }
 	        
 		} catch (Exception e) {
-			log.error("Fatal exception thrown while attempting to send PDU to client: {}", e);
+			log.error(getLogHead() + "fatal exception thrown while attempting to send PDU to client: {}", e);
+		}
+	}
+	
+	/**
+	 * Unbinds (if the connection is bound) and closes the connection.
+	 */
+	@ManagedOperation
+	public void close() {
+		
+		if (!isBound()) {
+			disconnect();
+		} else {
+			sendRequest( new Unbind(), 500);
 		}
 	}
 	
@@ -292,7 +324,7 @@ public class SmppSession extends SimpleChannelHandler {
 	        future.await(timeout);
 	        
 	        if (packet.getCommandId() == SmppPacket.UNBIND) {
-	        	close();
+	        	disconnect();
 	        }
 	        
 	        return (SmppResponse) PacketMapper.map( future.getResponse() );
@@ -304,16 +336,17 @@ public class SmppSession extends SimpleChannelHandler {
 	}
 	
 	/**
-	 * Closes the channel link and stops the receiving thread.
+	 * Sets the status to Status.CLOSED and loses the channel link.
 	 * 
 	 * @throws IOException if there is a problem closing the socket.
 	 */
-	private void close() {
+	private void disconnect() {
+		
+		this.status = Status.CLOSED;
+		
 		try {
 			channel.disconnect().await(500);
 		} catch (InterruptedException e) { }
-
-		this.status = Status.CLOSED;
 		
 	}
 
@@ -322,6 +355,11 @@ public class SmppSession extends SimpleChannelHandler {
 	 */
 	public Status getStatus() {
 		return status;
+	}
+	
+	@ManagedAttribute
+	public String getStatusString() {
+		return status.name();
 	}
 	
 	/**
@@ -347,11 +385,21 @@ public class SmppSession extends SimpleChannelHandler {
 
 		return bindType;
 	}
+	
+	@ManagedAttribute
+	public String getBindTypeString() {
+		try {
+			return getBindType().name();
+		} catch (IllegalStateException e) {
+			return "Session not bound";
+		}
+	}
 
 	/**
 	 * @return the system id which was used by the client to bind the session.
 	 * @throws IllegalStateException if the session is not bound.
 	 */
+	@ManagedAttribute
 	public String getSystemId() throws IllegalStateException {
 
 		if (!status.equals(Status.BOUND)) {
@@ -361,7 +409,36 @@ public class SmppSession extends SimpleChannelHandler {
 		return systemId;
 	}
 	
+	public Date creationTime() {
+		return creationTime;
+	}
 	
+	@ManagedAttribute
+	public String getCreated() {
+		
+		long creation = creationTime.getTime();
+		long actual = System.currentTimeMillis();
+		
+		long diffMillis = (actual - creation) / 1000;
+		
+		if (diffMillis < 60) {
+			return "just now";
+		}
+		
+		if (diffMillis < 3600) {
+			int diff = new Double(Math.floor(diffMillis / 60)).intValue();
+			return "about " + diff + " " + (diff == 1 ? "minute" : "minutes") + " ago";
+		}
+		
+		if (diffMillis < 86400) {
+			int diff = new Double(Math.floor(diffMillis / 3600)).intValue();
+			return "about" + diff + " " + (diff == 1 ? "hour" : "hours") + " ago";
+		}
+		
+		int diff = new Double(Math.floor(diffMillis / 86400)).intValue();
+		return  diff + " " + (diff == 1 ? "day" : "days") + " ago";
+		
+	}
 	
 	/**
 	 * Sets the packet processor that will be used to process the packets.
@@ -377,6 +454,10 @@ public class SmppSession extends SimpleChannelHandler {
 	 */
 	public PacketProcessor getPacketProcessor() {
 		return packetProcessor;
+	}
+	
+	private String getLogHead() {
+		return "[session-id=" + sessionId + (systemId != null ? ",system-id=" + systemId : "") + "] ";
 	}
 	
 	/**
@@ -401,7 +482,7 @@ public class SmppSession extends SimpleChannelHandler {
 		public void send(Response response) {
 			
 			if (responseSent) {
-				log.warn("response for this request was already sent to the client ... ignoring");
+				log.warn(getLogHead() + "response for this request was already sent to the client ... ignoring");
 				return;
 			}
 			
@@ -452,11 +533,11 @@ public class SmppSession extends SimpleChannelHandler {
 				
 				// handle unbind request
 				if (commandId == SmppPacket.UNBIND) {	
-					close();
+					disconnect();
 				}
 				
 			} catch (Exception e) {
-				log.error("Exception sending response: " + e.getMessage(), e);
+				log.error(getLogHead() + "Exception sending response: " + e.getMessage(), e);
 			}
 		}
     	
