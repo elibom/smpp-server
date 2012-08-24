@@ -14,7 +14,7 @@ If you are using Maven, you just need to add the dependency and the repository t
         <dependency>
             <groupId>net.gescobar</groupId>
             <artifactId>smpp-server</artifactId>
-            <version>0.4.0</version>
+            <version>0.4.1</version>
         </dependency>
     </dependencies>
 
