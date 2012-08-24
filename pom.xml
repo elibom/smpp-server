@@ -106,6 +106,10 @@
 	
 	<repositories>
 		<repository>
+			<id>elibom</id>
+			<url>http://repository.elibom.net/nexus/content/repositories/releases</url>
+		</repository>
+		<repository>
 			<id>cloudhopper</id>
 			<url>http://maven.cloudhopper.com/repos/third-party/</url>
 		</repository>
