@@ -6,25 +6,27 @@ A project based on the [Cloudhopper SMPP](https://github.com/twitter/cloudhopper
 
 ## Configuration
 
-If you are using Maven, you just need to add the dependency and the repository to your pom.xml file:
+If you are using Maven, you will need to configure the repository in the pom.xml file first:
 
 ```xml
+<repositories>
+    <repository>  
+        <id>elibom</id>  
+        <url>http://repository.elibom.net/nexus/content/repositories/releases</url>  
+    </repository>
+</repositories>
+```
 
-    <dependencies>
-        <dependency>
-            <groupId>net.gescobar</groupId>
-            <artifactId>smpp-server</artifactId>
-            <version>0.4.1</version>
-        </dependency>
-    </dependencies>
+And then add the dependency:
 
-    <repositories>
-        <repository>  
-            <id>elibom</id>  
-            <url>http://repository.elibom.net/nexus/content/repositories/releases</url>  
-        </repository>
-    </repositories>
-
+```xml
+<dependencies>
+    <dependency>
+        <groupId>net.gescobar</groupId>
+        <artifactId>smpp-server</artifactId>
+        <version>0.4.1</version>
+    </dependency>
+</dependencies>
 ```
 
 ## Starting and stopping
@@ -52,12 +54,13 @@ public class MyPacketProcessor implements PacketProcessor {
 		if (packet.isBind()) {
 	   	 		
 	   	 	// check the credentials and return the corresponding SMPP command status
+	   	 	Bind bind = (Bind) packet;
 	   	 	responseSender.send( Response.OK ):
 	   	 					
 	   	 } else if (packet.getCommandId() == SmppPacket.SUBMIT_SM) {
 	   	 		
 	   	 	// a message has arrived, what do you want to do with it?
-	   	 	
+	   	 	SubmitSm submit = (SubmitSm) packet;
 	   	 	responseSender.send( Response.INVALID_DEST_ADDRESS ); // just an example
 	   	 		
 	   	 }
