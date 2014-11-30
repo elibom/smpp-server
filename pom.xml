@@ -5,7 +5,7 @@
 	<artifactId>smpp-server</artifactId>
 	
 	<name>SMPP Server</name>
-	<version>0.4.2</version>
+	<version>0.4.3-SNAPSHOT</version>
 	<description>A simple SMPP Server based on the cloudhopper library.</description>
 	
 	<dependencies>
@@ -50,7 +50,7 @@
 	<scm>
 		<connection>scm:git:git@github.com:germanescobar/smpp-server.git</connection>
 		<url>scm:git:git@github.com:germanescobar/smpp-server.git</url>
-	  <tag>0.4.2</tag>
+	  <tag>HEAD</tag>
   </scm>
 	
 	<build>
