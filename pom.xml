@@ -10,9 +10,9 @@
 	
 	<dependencies>
 		<dependency>
-			<groupId>cloudhopper</groupId>
+			<groupId>com.cloudhopper</groupId>
 			<artifactId>ch-smpp</artifactId>
-			<version>4.1.2</version>
+			<version>5.0.6</version>
 		</dependency>
 		<dependency>
 			<groupId>net.gescobar</groupId>
@@ -108,10 +108,6 @@
 		<repository>
 			<id>elibom</id>
 			<url>http://repository.elibom.net/nexus/content/repositories/releases</url>
-		</repository>
-		<repository>
-			<id>cloudhopper</id>
-			<url>http://maven.cloudhopper.com/repos/third-party/</url>
 		</repository>
 	</repositories>
 	
